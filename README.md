@@ -23,7 +23,19 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+A small NestJS REST API with in-memory CRUD modules for users and products.
+
+## API
+
+Both resources expose the same CRUD routes under `/api`:
+
+- `POST /api/users` and `POST /api/products`
+- `GET /api/users` and `GET /api/products`
+- `GET /api/users/:id` and `GET /api/products/:id`
+- `PATCH /api/users/:id` and `PATCH /api/products/:id`
+- `DELETE /api/users/:id` and `DELETE /api/products/:id`
+
+Data is held in memory and resets when the application restarts.
 
 ## Project setup
 
