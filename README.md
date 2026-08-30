@@ -37,6 +37,25 @@ Both resources expose the same CRUD routes under `/api`:
 
 Data is held in memory and resets when the application restarts.
 
+## Redis
+
+The global `RedisModule` provides `RedisService` for Redis-backed features. Copy
+`.env.example` to `.env` and set `REDIS_URL` for your environment. If omitted,
+the application uses `redis://localhost:6379`.
+
+Inject the service into a Nest provider and use `get`, `set`, or `del`:
+
+```typescript
+constructor(private readonly redisService: RedisService) {}
+
+await this.redisService.set('example:key', 'value', 60);
+const value = await this.redisService.get('example:key');
+```
+
+Connections are established on the first Redis operation and closed during
+application shutdown. The raw client is also injectable with `REDIS_CLIENT` for
+commands not exposed by `RedisService`.
+
 ## Project setup
 
 ```bash
