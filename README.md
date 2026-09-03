@@ -59,8 +59,37 @@ npm run start:dev
 
 ### Create a physical-presence table session
 
-```text
-POST /api/table-sessions
+- `POST /api/users` and `POST /api/products`
+- `GET /api/users` and `GET /api/products`
+- `GET /api/users/:id` and `GET /api/products/:id`
+- `PATCH /api/users/:id` and `PATCH /api/products/:id`
+- `DELETE /api/users/:id` and `DELETE /api/products/:id`
+
+Data is held in memory and resets when the application restarts.
+
+## Redis
+
+The global `RedisModule` provides `RedisService` for Redis-backed features. Copy
+`.env.example` to `.env` and set `REDIS_URL` for your environment. If omitted,
+the application uses `redis://localhost:6379`.
+
+Inject the service into a Nest provider and use `get`, `set`, or `del`:
+
+```typescript
+constructor(private readonly redisService: RedisService) {}
+
+await this.redisService.set('example:key', 'value', 60);
+const value = await this.redisService.get('example:key');
+```
+
+Connections are established on the first Redis operation and closed during
+application shutdown. The raw client is also injectable with `REDIS_CLIENT` for
+commands not exposed by `RedisService`.
+
+## Project setup
+
+```bash
+$ yarn install
 ```
 
 ```json

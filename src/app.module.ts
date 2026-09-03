@@ -9,6 +9,9 @@ import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { TableSessionsModule } from './table-sessions/table-sessions.module';
+import { ProductsModule } from './products/products.module';
+import { RedisModule } from './redis/redis.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { TableSessionsModule } from './table-sessions/table-sessions.module';
     TableSessionsModule,
     MessagingModule,
     HealthModule,
+    RedisModule,
+    UsersModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
