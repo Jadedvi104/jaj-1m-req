@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: restaurant
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d restaurant"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redpanda:
+    image: redpandadata/redpanda:v25.2.7
+    command: ["redpanda", "start", "--overprovisioned", "--smp", "1", "--memory", "512M", "--reserve-memory", "0M", "--node-id", "0", "--check=false", "--kafka-addr", "PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr", "PLAINTEXT://redpanda:9092"]
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=localhost:9092 | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka-init:
+    image: redpandadata/redpanda:v25.2.7
+    command: ["topic", "create", "orders.v1", "-X", "brokers=redpanda:9092", "--partitions", "12", "--replicas", "1"]
+    entrypoint: ["rpk"]
+    depends_on:
+      redpanda: { condition: service_healthy }
+
+  api:
+    build: .
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/restaurant
+      DATABASE_SSL: "false"
+      DATABASE_POOL_SIZE: 10
+      KBANK_WEBHOOK_TOKEN: local-development-only
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SSL: "false"
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+volumes:
+  postgres-data:
