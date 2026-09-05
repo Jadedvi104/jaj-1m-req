@@ -1,244 +1,143 @@
-# Code Refactoring Review
+# Staff Engineering Review and Improvement Plan
 
-## Purpose
+Reviewed: 2026-09-05
 
-This review evaluates the project for scalability, maintainability, and readability. The current feature-based NestJS structure is a good foundation, but the application is still a prototype rather than a horizontally scalable production API.
+## Assessment
 
-The highest-value improvements are durable persistence, runtime validation, reliable integration tests, and a clearer separation between domain behavior and storage.
+This is a promising NestJS prototype with good transaction design, but it needs correctness and operational improvements before production scaling. Keep the modular monolith and prioritize API contracts, persistence, concurrency, and meaningful tests.
 
-## Current verification results
+Preserve the feature-based modules, thin controllers, parameterized SQL, integer money values, database inventory constraints, transaction retries, and transactional outbox.
 
-The repository was reviewed without changing its source code. At the time of review:
+This review supersedes the earlier review in this file. Application source was unchanged during the review. Concurrency and throughput findings are based on code inspection, not database integration or load tests.
 
-- The production build passed.
-- The ESLint check passed.
-- All 8 unit tests passed.
-- The end-to-end suite failed before running its tests.
-- Statement coverage was 43.03%.
-- Line coverage was 41.22%.
+## Verified baseline
 
-The end-to-end failure occurs while Jest loads `@nestjs/config`. The project currently combines Jest 30, `ts-jest` 29, and an ESM-exporting configuration dependency, resulting in an `Unexpected token 'export'` error.
+- All 8 unit tests across 4 suites pass (`npm test -- --runInBand`).
+- Type checking (`tsc --noEmit --incremental false`) fails because the local installation cannot resolve the declared `redis` dependency.
+- Non-mutating ESLint reports 25 errors, all associated with unresolved Redis types.
+- The end-to-end suite fails before executing tests because Redis cannot be imported.
+- Direct execution of the production ValidationPipe against valid product and user payloads returns HTTP 400.
+- Current tests do not cover ordering, payments, reservation expiration, or outbox delivery.
 
-## Highest-priority improvements
+The Redis failures describe the local dependency installation; they do not establish that the dependency is missing from package.json. Restore a reproducible installation before diagnosing remaining build or test failures. No current coverage or throughput result was measured.
 
-### 1. Replace process-local CRUD storage
+## 1. Repair API contracts and persistence — highest priority
 
-`src/common/crud.service.ts` stores every record in an in-memory array and generates IDs inside each application process.
+Evidence: `src/main.ts`, `src/products/dto/*.ts`, `src/users/dto/*.ts`, `src/common/crud.service.ts`, and `src/app.module.ts`.
 
-This creates several scalability problems:
+Product and user DTOs lack validation decorators. The existing global ValidationPipe enables whitelist and forbidNonWhitelisted, so valid payload properties are rejected. The fix is DTO validation, not adding another global pipe. See [NestJS validation](https://docs.nestjs.com/techniques/validation).
 
-- Data disappears whenever the application restarts.
-- Multiple application instances maintain inconsistent datasets.
-- IDs can collide across processes or hosts.
-- Lookup, update, and deletion operations are `O(n)`.
-- Collection endpoints cannot paginate without scanning the entire array.
-- Memory use grows without a defined limit.
+Users and products also use process-local arrays. Data disappears on restart, differs across replicas, and uses process-local numeric IDs. Products created here are disconnected from the PostgreSQL catalog used by ordering.
 
-Use a durable database such as PostgreSQL as the authoritative data store. Give each feature its own repository contract:
+Actions:
 
-```text
-UsersService ----> UsersRepository ----> PostgreSQL
-ProductsService -> ProductsRepository -> PostgreSQL
-                              |
-                              +---------> Redis cache
-```
+- Decide whether these routes are demonstration code or real product features.
+- Remove demonstration routes from the production module, or implement database-backed, tenant-scoped feature services.
+- Add create/update DTO validation and bounded collection pagination.
+- Align product identifiers and pricing with the ordering schema.
+- Require staff authentication and branch authorization for administrative mutations.
 
-Redis should normally accelerate selected reads, rate limiting, or coordination rather than act as the authoritative relational store. Add database constraints and indexes based on actual access patterns, and use cursor-based pagination for large collections.
+Acceptance: valid requests succeed, invalid requests fail predictably, and records remain consistent across restarts and replicas.
 
-### 2. Validate every external input
+## 2. Strengthen transaction and idempotency correctness
 
-The current DTO classes provide TypeScript compile-time types but do not validate values received over HTTP. For example, the product API can receive negative prices, empty names, unexpected fields, and values with incorrect runtime types.
+Evidence: `src/orders/orders.service.ts`, `src/orders/dto/create-order.dto.ts`, `src/payments/payments.service.ts`, and `src/reservations/reservation-expirer.service.ts`.
 
-Install and configure request validation globally in `src/main.ts`:
+An existing idempotency key returns an order without verifying that the request payload matches. Reusing a key with different items silently returns the original result.
 
-```typescript
-app.useGlobalPipes(
-  new ValidationPipe({
-    transform: true,
-    whitelist: true,
-    forbidNonWhitelisted: true,
-  }),
-);
-```
+Inventory locks are acquired in client-supplied item order. Concurrent carts containing the same products in opposite orders can deadlock. Retries help, but consistent lock ordering reduces avoidable contention. See [PostgreSQL explicit locking](https://www.postgresql.org/docs/17/explicit-locking.html).
 
-DTO rules should cover:
+Actions:
 
-- Required and maximum string lengths
-- Email format
-- Positive product prices
-- Optional description length
-- Positive integer or UUID identifiers
-- Rejection of unknown fields
+- Store a canonical request fingerprint with the idempotency key and reject conflicting reuse.
+- Scope replay access appropriately to the ordering session.
+- Acquire inventory locks in a deterministic order across reservation, payment, and expiration paths.
+- Bound item count, quantity, and monetary totals, including database integer limits.
+- Test concurrent orders, duplicate submissions, and payment-versus-expiration races against real PostgreSQL.
 
-Generate update DTOs with `PartialType(CreateUserDto)` and `PartialType(CreateProductDto)` so create and update rules cannot silently drift apart.
+Acceptance: retries never create extra orders, inventory never becomes negative or oversold, and conflicting key reuse returns a clear error.
 
-Nest recommends validating incoming data at the application boundary and supports transformation and property whitelisting through its [validation facilities](https://docs.nestjs.com/techniques/validation).
+## 3. Make background processing operationally reliable
 
-### 3. Repair and expand end-to-end testing
+Evidence: `src/messaging/outbox-publisher.service.ts`, `src/reservations/reservation-expirer.service.ts`, and `src/database/database.service.ts`.
 
-First align the Jest and `ts-jest` major versions, then explicitly choose and configure either CommonJS or ESM for the test environment.
+The outbox publisher waits for Kafka inside a database transaction, retaining connections and locks during broker delays. A successful send followed by a failed database commit can cause duplicate delivery. The attempts field increments only after successful publication; failure information is not persisted.
 
-The existing end-to-end test also does not reproduce production bootstrap behavior. Production installs the `/api` global prefix in `src/main.ts`, but the test constructs the Nest application without it. Extract common application setup into a function used by both production startup and end-to-end tests.
+Actions:
 
-Add HTTP-level tests for:
+- Preserve explicit at-least-once delivery and require consumer deduplication by event ID. Kafka producer idempotence does not make the database-to-broker handoff atomic.
+- Introduce short database claims with leases, publish outside the claim transaction, and acknowledge afterward. Include lease ownership, expiry, and crash recovery in the design.
+- Persist failed attempts, retry timing, and diagnostic information.
+- Define whether per-order event ordering is required and enforce it across concurrent publishers.
+- Prevent overlapping expiration runs and await active work during shutdown.
+- Allow API and worker processes to scale independently.
 
-- Every users and products CRUD route
-- The real `/api` prefix
-- Invalid request bodies and identifiers
-- Missing resources
-- Unknown request properties
-- Duplicate emails and other uniqueness constraints
-- Pagination and sorting
-- Database and Redis failures
-- Concurrent updates
-- Graceful shutdown behavior
+Acceptance: broker outages do not exhaust API database capacity, retries remain observable, and worker restarts do not lose events.
 
-## Maintainability and readability
+## 4. Refactor around business responsibilities
 
-### 4. Separate domain services from storage behavior
+Evidence: `src/orders/orders.service.ts`, `src/payments/payments.service.ts`, `src/common/crud.service.ts`, and `tsconfig.json`.
 
-The generic `CrudService` removes duplication today, but it also combines storage, ID allocation, mutation, error formatting, and domain operations. Users and products will eventually acquire different authorization, validation, transaction, and lifecycle rules, making inherited generic CRUD behavior restrictive.
+OrdersService combines session validation, pricing, inventory locking, numbering, persistence, payment initialization, event creation, and response mapping. Outbox insertion is duplicated across several services.
 
-Keep feature services explicit and put persistence behind repository interfaces:
+Extract focused collaborators for inventory reservation/release, order persistence, pricing and state rules, typed outbox writing, and response mapping. Keep transaction ownership in the application service and pass the same transaction into collaborators. Avoid generic abstractions that obscure business rules.
 
-```typescript
-interface UsersRepository {
-  findById(id: UserId): Promise<User | null>;
-  create(input: CreateUser): Promise<User>;
-  update(id: UserId, changes: UpdateUser): Promise<User | null>;
-}
-```
+For TypeScript:
 
-This makes business policies readable, storage replaceable, and tests more focused. Avoid adding more shared abstractions until at least two mature features have genuinely identical behavior.
+- Progressively enable strict checking and unchecked indexed-access checks.
+- Replace status strings with explicit unions.
+- Use query-specific row types: MenuRow currently describes fields that some queries never return.
+- Prefer explicit select lists to SELECT *.
+- Define stable response types independently of database rows.
 
-### 5. Strengthen TypeScript checks
+Acceptance: domain rules can be tested independently, query result types match selected fields, and related writes retain one transaction boundary.
 
-The current `tsconfig.json` enables only part of strict mode and explicitly disables `noImplicitAny` and `strictBindCallApply`.
+## 5. Close framework and deployment gaps
 
-Enable stronger checks incrementally:
+Evidence: `src/database/database.service.ts`, `src/app.module.ts`, `src/main.ts`, `test/app.e2e-spec.ts`, `src/payments/payments.controller.ts`, and `database/migrations/001_initial_schema.sql`.
 
-```json
-{
-  "strict": true,
-  "noFallthroughCasesInSwitch": true,
-  "noUncheckedIndexedAccess": true
-}
-```
+Database TLS certificate verification is disabled. Configuration lacks comprehensive startup validation. The end-to-end test uses the default adapter and omits the production prefix and validation configuration.
 
-TypeScript's [`strict`](https://www.typescriptlang.org/tsconfig/strict) option enables a family of checks that provide stronger correctness guarantees.
+Actions:
 
-Also add explicit return types to controllers and service methods. Once persistence becomes asynchronous, standardize API methods around types such as `Promise<UserResponseDto>` and `Promise<Page<ProductResponseDto>>`.
+- Validate database, Kafka, webhook, and numeric settings at startup.
+- Verify database certificates using the deployment's trusted CA.
+- Add a pool error listener and pool saturation metrics. See [node-postgres pooling](https://node-postgres.com/features/pooling).
+- Share application setup between production and end-to-end tests: Fastify, prefix, and validation settings.
+- Introduce versioned migrations with execution history; the existing command applies the initial schema directly.
+- Complete provider-specific payment verification before accepting real payments; the README correctly identifies the shared-token adapter as interim.
+- Add rate limits to public session and order endpoints.
+- Separate non-mutating lint/check commands from fix commands and run checks in CI.
 
-### 6. Validate and centralize configuration
+The schema enables RLS but defines no policies. Ordinary roles face default denial, while privileged roles can bypass it. Enabled RLS alone does not establish tenant isolation. Verify the actual runtime role and test tenant boundaries. See [PostgreSQL row security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html).
 
-`ConfigModule.forRoot()` currently loads untyped configuration, while application startup reads `PORT` directly from `process.env`.
+Health endpoints and shutdown hooks already exist. Extend their behavior where needed rather than treating them as missing. See [NestJS lifecycle events](https://docs.nestjs.com/fundamentals/lifecycle-events).
 
-Create validated, namespaced configuration for:
+Acceptance: invalid configuration fails startup, HTTP tests reproduce production behavior, migrations are repeatable, and tenant isolation is tested with the real application role.
 
-- `NODE_ENV`
-- `PORT`
-- Database URL and pool limits
-- Redis URL
-- Cache TTL values
-- Request-size limits
-- Request and dependency timeouts
+## 6. Measure scalability before changing architecture
 
-All application code should consume configuration through a consistent typed interface. Production startup should fail immediately when required configuration is absent or malformed. Nest supports this through [configuration validation](https://docs.nestjs.com/techniques/configuration).
+Evidence: `ARCHITECTURE.md`, `src/orders/orders.service.ts`, `database/migrations/001_initial_schema.sql`, and worker services.
 
-### 7. Reduce global Redis coupling
+The documented 50,000 requests-per-second target remains unverified. Likely pressure points are:
 
-`RedisModule` is global and exports both `RedisService` and the raw Redis client. This permits any feature to bypass the wrapper, which can create inconsistent key naming, TTL behavior, serialization, and error handling.
+- Multiple sequential database calls per order item.
+- A shared daily counter row for each branch.
+- Inventory contention on popular products.
+- Missing order_items(order_id) indexing for payment and expiration lookups.
+- Workers sharing database pools with HTTP traffic.
 
-Prefer explicit module imports and expose a narrow cache contract. Centralize:
+Batch database operations where practical and validate candidate indexes using execution plans. Budget database connections across replicas and workers. Instrument pool wait time, transaction retries, lock waits, expiration delay, and outbox age.
 
-- Key namespaces and schema versions
-- JSON serialization
-- Default and maximum TTL policies
-- Connection and command timeouts
-- Reconnect behavior
-- Cache invalidation
-- Cache metrics
+Benchmark realistic read/write mixes and hot branches separately. Define latency percentiles, error budgets, test duration, and correctness checks before declaring the capacity target achieved. Revisit numbering requirements if the branch counter becomes a measured bottleneck.
 
-If Redis is strictly a cache, consider Nest's standard [cache abstraction](https://docs.nestjs.com/techniques/caching) with a Redis-compatible store.
+Acceptance: a production-equivalent sustained load test meets the agreed workload and latency/error targets while preserving inventory, payment, and event-delivery invariants.
 
-## Production scalability
+## Delivery sequence
 
-### 8. Add operational controls
+1. Restore confidence: reproducible dependency installation, working DTOs, production-equivalent HTTP tests, and CI checks.
+2. Protect business invariants: idempotency, authorization, transaction concurrency tests, and payment verification.
+3. Improve maintainability: focused services, typed events, strict TypeScript, and migrations.
+4. Prove capacity: worker isolation, query optimization, observability, and sustained load tests.
 
-Before load testing or horizontal deployment, add:
-
-- Separate liveness and readiness endpoints
-- Graceful shutdown hooks
-- Structured request logs with correlation IDs
-- Latency, error-rate, database-pool, and cache metrics
-- Request and dependency timeouts
-- Payload-size limits
-- Rate limiting
-- CORS and security-header configuration
-- A consistent exception filter that does not leak internal details
-
-`RedisService` implements application shutdown cleanup, but `src/main.ts` does not currently call `app.enableShutdownHooks()`. Add shutdown hooks so termination signals invoke lifecycle cleanup. Nest's [health-check guidance](https://docs.nestjs.com/recipes/terminus) recommends shutdown hooks and supports readiness and liveness checks.
-
-### 9. Introduce pagination and explicit API contracts
-
-The current `findAll()` operation returns the complete dataset. Replace it with an explicit query contract:
-
-```typescript
-findMany(query: {
-  limit: number;
-  cursor?: string;
-  sort?: ProductSort;
-}): Promise<Page<Product>>;
-```
-
-Set a maximum page size and return a continuation cursor. Cursor pagination is generally more stable than offset pagination for frequently changing, large datasets.
-
-Define response DTOs separately from persistence entities so internal schema changes do not unintentionally modify the public API. Add OpenAPI generation after those contracts stabilize.
-
-### 10. Improve the development workflow and documentation
-
-The README still contains substantial Nest starter material and recommends Yarn even though the repository contains `package-lock.json`. Replace it with concise project-specific documentation covering:
-
-- Architecture and module responsibilities
-- Environment variables
-- Database setup and migrations
-- Redis's role
-- API examples
-- Testing and quality checks
-- Local development and deployment
-
-Separate mutating and non-mutating quality commands:
-
-```json
-{
-  "lint": "eslint ...",
-  "lint:fix": "eslint ... --fix",
-  "format:check": "prettier --check ...",
-  "check": "npm run lint && npm run format:check && npm test && npm run test:e2e && npm run build"
-}
-```
-
-Run `check` in CI. Add coverage thresholds after meaningful HTTP and integration tests exist; a coverage percentage alone should not replace testing important behavior.
-
-## Recommended implementation sequence
-
-1. Align the Jest and `ts-jest` toolchain and repair the end-to-end suite.
-2. Extract shared application bootstrap configuration for production and tests.
-3. Add runtime request validation and validated environment configuration.
-4. Introduce PostgreSQL repositories, migrations, constraints, and pagination.
-5. Make Redis an explicit cache rather than a globally exposed client.
-6. Enable strict TypeScript and define explicit request and response contracts.
-7. Add health checks, shutdown hooks, structured logs, metrics, and resource limits.
-8. Add CI quality gates and rewrite the README around this project.
-9. Load test realistic read/write traffic and optimize measured bottlenecks.
-
-## What is already working well
-
-- Features are organized into separate users and products modules.
-- Controllers are thin and delegate behavior to services.
-- DTOs and entities are already separated into recognizable locations.
-- Redis connection creation is lazy and connection attempts are shared.
-- Redis cleanup is represented by a Nest lifecycle hook.
-- Unit tests cover the basic CRUD lifecycle and part of the Redis wrapper.
-
-These are useful foundations. The next refactoring should preserve the feature-oriented structure while replacing prototype infrastructure with explicit production boundaries.
+Start with the first phase and use its tests to protect subsequent changes. Avoid a framework rewrite or microservice split until measured requirements justify the additional operational complexity.
