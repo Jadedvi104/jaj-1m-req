@@ -48,7 +48,7 @@ export class ReservationExpirerService
           );
           await tx.query(
             `insert into outbox_events(aggregate_type,aggregate_id,event_type,partition_key,payload)
-             values ('order',$1,'order.expired',$2,jsonb_build_object('orderId',$1::text))`,
+             values ('order',$1::uuid,'order.expired',$2,jsonb_build_object('orderId',$1::uuid::text))`,
             [order.id, order.branch_id],
           );
         }

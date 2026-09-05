@@ -33,7 +33,12 @@ export abstract class CrudService<
     const index = this.items.findIndex((item) => item.id === id);
     if (index === -1)
       throw new NotFoundException(`${this.entityName} ${id} was not found`);
-    this.items[index] = { ...this.items[index], ...dto };
+    // Transformed DTOs contain undefined class fields for omitted properties.
+    // PATCH must preserve stored values for fields absent from the request.
+    const changes = Object.fromEntries(
+      Object.entries(dto as object).filter(([, value]) => value !== undefined),
+    );
+    this.items[index] = { ...this.items[index], ...changes };
     return { ...this.items[index] };
   }
 

@@ -157,10 +157,13 @@ GET /api/health/ready
 ## Verification
 
 ```bash
-npm run build
-npm run lint
-npm test -- --runInBand
+npm run check
+# Requires TEST_DATABASE_URL pointing to a disposable PostgreSQL database:
+npm run test:integration
 ```
+
+See [TESTING.md](./TESTING.md) for the architecture assessment, test-case matrix,
+database setup, smoke-load command, reproduced defects and remaining release gates.
 
 ## Planned slices
 

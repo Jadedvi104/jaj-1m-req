@@ -18,7 +18,14 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\" --no-fix",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test:integration": "jest --config ./test/jest-integration.json --runInBand",
+    "test:all": "jest --config ./test/jest-all.json --runInBand",
+    "test:coverage": "npm run test:all -- --coverage",
+    "check": "npm run lint:check && npm run typecheck && npm run test:coverage && npm run build",
+    "test:load": "node test/load/smoke.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

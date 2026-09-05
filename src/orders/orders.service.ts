@@ -126,7 +126,7 @@ export class OrdersService {
         }
 
         const businessDate = await tx.query<{ day: string }>(
-          `select (now() at time zone 'Asia/Bangkok')::date::text day`,
+          `select (now() at time zone 'Asia/Bangkok')::date::text as day`,
         );
         const counter = await tx.query<{ last_number: string }>(
           `insert into branch_order_counters(branch_id, business_date, last_number)
