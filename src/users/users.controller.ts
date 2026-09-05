@@ -1,3 +1,4 @@
+import { User } from './entities/user.entity';
 import {
   Body,
   Controller,
@@ -15,22 +16,22 @@ import { UsersService } from './users.service';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-  @Post() create(@Body() dto: CreateUserDto) {
+  @Post() create(@Body() dto: CreateUserDto): User {
     return this.usersService.create(dto);
   }
-  @Get() findAll() {
+  @Get() findAll(): User[] {
     return this.usersService.findAll();
   }
-  @Get(':id') findOne(@Param('id', ParseIntPipe) id: number) {
+  @Get(':id') findOne(@Param('id', ParseIntPipe) id: number): User {
     return this.usersService.findOne(id);
   }
   @Patch(':id') update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserDto,
-  ) {
+  ): User {
     return this.usersService.update(id, dto);
   }
-  @Delete(':id') remove(@Param('id', ParseIntPipe) id: number) {
+  @Delete(':id') remove(@Param('id', ParseIntPipe) id: number): User {
     return this.usersService.remove(id);
   }
 }

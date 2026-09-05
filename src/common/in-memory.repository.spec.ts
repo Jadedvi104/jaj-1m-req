@@ -1,10 +1,11 @@
+import { InMemoryUsersRepository } from '../users/in-memory-users.repository';
 import { NotFoundException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 
 describe('Shared CRUD storage contract', () => {
   let service: UsersService;
   beforeEach(() => {
-    service = new UsersService();
+    service = new UsersService(new InMemoryUsersRepository());
   });
   it('does not reuse deleted IDs', () => {
     const first = service.create({ name: 'A', email: 'a@example.com' });
