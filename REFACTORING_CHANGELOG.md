@@ -1,4 +1,20 @@
-# Users and products refactoring
+# Security and reliability audit — 2026-09-06
+
+- Bound order idempotency to a canonical request fingerprint and the originating table session, including concurrent unique-conflict recovery. Expired public access also blocks reservation extensions and replays.
+- Replaced per-item menu queries with one parameterized batch query using deterministic inventory lock order and a Map lookup. Added an order/product unique index for inventory joins.
+- Extracted pure order validation, fingerprinting, and integer-money calculation functions; separated table-session row types from menu row types.
+- Made payment confirmations immutable once recorded, acknowledged identical review/refund retries without duplicate events, and removed the extra duplicate-payment lookup. Reservation eligibility uses the database clock.
+- Enabled certificate verification, prevented connection-URL TLS overrides, validated pool configuration, preserved original transaction errors, discarded failed-rollback clients, and released connections before retry delays.
+- Blocked unauthenticated process-local CRUD routes by default and in production. Explicit opt-in is limited to development mode.
+- Added request-size, quantity, integer-money, optional-field, and identifier-length boundaries. Empty webhook configuration now fails closed.
+- Coalesced expiry work, drained active worker batches before shutdown, validated Redis TTLs, and handled shutdown during a pending Redis connection.
+- Enabled TypeScript strict mode and documented fields populated by DTO transformation using definite-assignment declarations. Hardened generic updates against inherited/prototype-control fields.
+- Pinned patched transitive Fastify 5.12.1 and qs 6.16.0 via npm overrides, preserving NestJS 11. Regenerated the lockfile; npm reported zero vulnerabilities after installation.
+- Expanded Jest and isolated Fastify HTTP coverage, plus PostgreSQL regression cases for replay ownership, payment evidence preservation, public access expiry, and reversed inventory requests.
+
+See [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for findings, verification, migration requirements, and remaining release gates.
+
+## Previous users and products refactoring
 
 - Replaced service inheritance from `CrudService` with explicit feature services and injectable repository contracts. Nest modules bind each contract to its in-memory adapter.
 - Confined storage, numeric ID allocation, and copy isolation to a shared map-backed repository; individual lookups, updates, and deletes no longer scan an array.

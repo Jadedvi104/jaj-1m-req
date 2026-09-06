@@ -6,6 +6,7 @@ import { configureApp, createHttpAdapter } from '../src/app.setup';
 import { DatabaseService } from '../src/database/database.service';
 import { OutboxPublisherService } from '../src/messaging/outbox-publisher.service';
 import { ReservationExpirerService } from '../src/reservations/reservation-expirer.service';
+import { orderFingerprint } from '../src/orders/order-policy';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const order = {
@@ -23,13 +24,18 @@ const payment = {
 
 describe('Production Fastify HTTP contract (isolated database)', () => {
   let app: NestFastifyApplication;
+  const config = new ConfigService({
+    KBANK_WEBHOOK_TOKEN: 'test-secret',
+    NODE_ENV: 'development',
+    ENABLE_DEMO_CRUD: 'true',
+  });
   const db = { query: jest.fn(), ping: jest.fn(), transaction: jest.fn() };
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DatabaseService)
       .useValue(db)
       .overrideProvider(ConfigService)
-      .useValue(new ConfigService({ KBANK_WEBHOOK_TOKEN: 'test-secret' }))
+      .useValue(config)
       .overrideProvider(OutboxPublisherService)
       .useValue({})
       .overrideProvider(ReservationExpirerService)
@@ -44,6 +50,9 @@ describe('Production Fastify HTTP contract (isolated database)', () => {
     await app.getHttpAdapter().getInstance().ready();
   });
   beforeEach(() => {
+    config.set('NODE_ENV', 'development');
+    config.set('ENABLE_DEMO_CRUD', 'true');
+    config.set('KBANK_WEBHOOK_TOKEN', 'test-secret');
     jest.resetAllMocks();
     db.query.mockResolvedValue({ rowCount: 0, rows: [] });
     db.ping.mockResolvedValue(undefined);
@@ -219,6 +228,9 @@ describe('Production Fastify HTTP contract (isolated database)', () => {
           status: 'pending_payment',
           total_satang: 100,
           extension_used: false,
+          table_session_id: id,
+          request_fingerprint: orderFingerprint(order),
+          public_access_valid: true,
         },
       ],
     });
@@ -344,4 +356,94 @@ describe('Production Fastify HTTP contract (isolated database)', () => {
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain('credentials');
   });
+  it.each(['users', 'products'])(
+    'blocks all %s operations in production even with demo opt-in',
+    async (route) => {
+      config.set('NODE_ENV', 'production');
+      for (const [method, path] of [
+        ['GET', route],
+        ['POST', route],
+        ['GET', `${route}/1`],
+        ['PATCH', `${route}/1`],
+        ['DELETE', `${route}/1`],
+      ] as const) {
+        expect(
+          (await app.inject({ method, url: `/api/${path}` })).statusCode,
+        ).toBe(404);
+      }
+    },
+  );
+  it('requires explicit demo opt-in', async () => {
+    config.set('ENABLE_DEMO_CRUD', 'false');
+    expect((await app.inject('/api/users')).statusCode).toBe(404);
+  });
+  it.each(['', '   '])(
+    'rejects empty configured webhook secrets %p',
+    async (secret) => {
+      config.set('KBANK_WEBHOOK_TOKEN', secret);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/webhooks/kbank/payments',
+        payload: payment,
+      });
+      expect(response.statusCode).toBe(401);
+      expect(db.transaction).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { ...order, items: Array.from({ length: 101 }, () => order.items[0]) },
+    { ...order, items: [{ productId: id, quantity: 1001 }] },
+    { ...order, items: [{ productId: id, quantity: 1, sizeCode: null }] },
+    { ...order, items: [{ productId: id, quantity: 1, spiceLevel: '' }] },
+    { ...order, customerName: '   ' },
+  ])(
+    'enforces resource and optional-field boundaries before transaction access: %p',
+    async (payload) => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/orders',
+        headers: { 'idempotency-key': 'key' },
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(db.transaction).not.toHaveBeenCalled();
+    },
+  );
+  it('does not return another session’s order when an idempotency key is reused', async () => {
+    db.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [
+        {
+          table_session_id: 'another-session',
+          public_access_valid: true,
+          request_fingerprint: orderFingerprint(order),
+          public_reference: 'private-capability',
+        },
+      ],
+    });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      headers: { 'idempotency-key': 'key' },
+      payload: order,
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.body).not.toContain('private-capability');
+  });
+  it.each([2_147_483_648, Number.MAX_SAFE_INTEGER])(
+    'rejects payment integer overflow %p',
+    async (amountSatang) => {
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/webhooks/kbank/payments',
+            headers: { 'x-webhook-token': 'test-secret' },
+            payload: { ...payment, amountSatang },
+          })
+        ).statusCode,
+      ).toBe(400);
+      expect(db.transaction).not.toHaveBeenCalled();
+    },
+  );
 });

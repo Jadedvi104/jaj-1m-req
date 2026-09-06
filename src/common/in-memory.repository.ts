@@ -32,6 +32,13 @@ export abstract class InMemoryRepository<
     if (!record) return null;
     const updated = { ...record };
     for (const key in changes) {
+      if (
+        !Object.hasOwn(changes, key) ||
+        key === '__proto__' ||
+        key === 'constructor' ||
+        key === 'prototype'
+      )
+        continue;
       const value = changes[key];
       if (value !== undefined) Object.assign(updated, { [key]: value });
     }

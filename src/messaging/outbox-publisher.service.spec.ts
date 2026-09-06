@@ -60,6 +60,32 @@ describe('OutboxPublisherService', () => {
     await jest.advanceTimersByTimeAsync(250);
     expect(send).not.toHaveBeenCalled();
   });
+  it('waits for the active publication before disconnecting Kafka', async () => {
+    let finish!: () => void;
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'event', payload: {} }],
+      rowCount: 1,
+    });
+    send.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await service.onModuleInit();
+    await jest.advanceTimersByTimeAsync(250);
+    const shutdown = service.onModuleDestroy();
+    await Promise.resolve();
+    expect(disconnect).not.toHaveBeenCalled();
+    finish();
+    await shutdown;
+    expect(query).toHaveBeenLastCalledWith(
+      expect.stringContaining('published_at=now()'),
+      [['event']],
+    );
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it('publishes keyed events with stable IDs before marking them delivered', async () => {
     query.mockResolvedValueOnce({
       rows: [

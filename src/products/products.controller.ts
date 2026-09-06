@@ -8,12 +8,15 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  UseGuards,
 } from '@nestjs/common';
+import { DemoOnlyGuard } from '../common/demo-only.guard';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
 @Controller('products')
+@UseGuards(DemoOnlyGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
   @Post() create(@Body() dto: CreateProductDto): Product {

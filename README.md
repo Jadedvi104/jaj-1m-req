@@ -19,6 +19,9 @@ The current vertical slice supports:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the scaling plan.
 
+See [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for the current audit, compatibility
+changes, verification results, and remaining production release requirements.
+
 ## Requirements
 
 - Node.js 22 LTS+
@@ -65,7 +68,9 @@ npm run start:dev
 - `PATCH /api/users/:id` and `PATCH /api/products/:id`
 - `DELETE /api/users/:id` and `DELETE /api/products/:id`
 
-Data is held in memory and resets when the application restarts.
+These users/products routes are development examples. They return 404 unless
+`NODE_ENV=development` and `ENABLE_DEMO_CRUD=true` are both configured. They are
+always blocked in production. Data is held in memory and resets on restart.
 
 ## Redis
 
@@ -102,7 +107,11 @@ $ yarn install
 
 ### Create an order and reservation
 
-`POST /api/orders` requires an `Idempotency-Key` header.
+`POST /api/orders` requires an `Idempotency-Key` header containing 1–128 visible
+ASCII characters, without spaces. Retries must use the same table session and
+request data; conflicting or expired replays return 409. Item ordering and UUID
+letter case do not affect retry identity. Orders allow at most 100 distinct
+products and 1,000 units per product; totals cannot exceed 2,147,483,647 satang.
 
 ```json
 {
@@ -146,6 +155,28 @@ X-Webhook-Token: configured-secret
 ```
 
 The final KBank adapter must replace the interim shared-token check with the bank's documented signature verification and payload mapping.
+
+Identical webhook retries acknowledge the recorded payment state without new
+inventory changes or events. A changed amount or transaction ID after a recorded
+confirmation returns 409 and requires reconciliation.
+
+## Upgrading an existing database
+
+Apply `database/migrations/002_order_request_fingerprint.sql` once before starting
+the updated API. The `db:migrate` command initializes an **empty** database with
+both migrations; do not rerun the initial schema on an existing database.
+Docker initialization also only applies migrations when creating a new volume.
+
+The new fingerprint column intentionally remains null on historical orders.
+Their existing public links continue to work until expiry, but replaying their
+old idempotency keys returns 409 because the original request cannot be verified.
+Drain old application instances before deploying the new writer.
+
+Production database connections should use `DATABASE_SSL=true` with a trusted
+certificate. Set `DATABASE_SSL_CA` to a custom CA PEM if needed. Remove `ssl*`
+and `uselibpqcompat` query parameters from `DATABASE_URL`; TLS is configured
+through these explicit environment settings. `DATABASE_SSL=false` is for a
+deliberately trusted local connection. Pool size must be an integer from 1–100.
 
 ### Health
 

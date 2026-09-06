@@ -22,7 +22,14 @@ export class PaymentsController {
     @Body() dto: ConfirmPaymentDto,
     @Headers('x-webhook-token') supplied = '',
   ) {
-    const expected = this.config.getOrThrow<string>('KBANK_WEBHOOK_TOKEN');
+    const expected = this.config.get<string>('KBANK_WEBHOOK_TOKEN');
+    if (
+      typeof expected !== 'string' ||
+      !expected.trim() ||
+      typeof supplied !== 'string'
+    ) {
+      throw new UnauthorizedException();
+    }
     const a = Buffer.from(supplied);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b))

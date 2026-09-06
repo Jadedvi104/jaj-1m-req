@@ -1,6 +1,7 @@
 import { InMemoryUsersRepository } from '../users/in-memory-users.repository';
 import { NotFoundException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
+import { InMemoryRepository } from './in-memory.repository';
 
 describe('Shared CRUD storage contract', () => {
   let service: UsersService;
@@ -40,5 +41,30 @@ describe('Shared CRUD storage contract', () => {
     const second = service.create({ name: 'B', email: 'b@example.com' });
     service.remove(first.id);
     expect(service.findAll()).toEqual([second]);
+  });
+  it('ignores inherited and prototype-control properties at the shared storage boundary', () => {
+    class Repository extends InMemoryRepository<
+      { id: number; name: string },
+      { name: string },
+      { name?: string }
+    > {
+      protected build(id: number, input: { name: string }) {
+        return { id, name: input.name };
+      }
+    }
+    const repository = new Repository();
+    const record = repository.create({ name: 'original' });
+    const inherited: { name?: string } = Object.create({
+      name: 'inherited',
+    }) as { name?: string };
+    expect(repository.update(record.id, inherited)?.name).toBe('original');
+    const poisoned = JSON.parse(
+      '{"__proto__":{"admin":true},"constructor":"bad","prototype":"bad","name":"updated"}',
+    ) as { name?: string };
+    expect(repository.update(record.id, poisoned)).toEqual({
+      id: record.id,
+      name: 'updated',
+    });
+    expect(repository.findById(record.id)).not.toHaveProperty('admin');
   });
 });

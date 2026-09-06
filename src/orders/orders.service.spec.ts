@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService, Transaction } from '../database/database.service';
 import { OrdersService } from './orders.service';
+import { orderFingerprint } from './order-policy';
 
 const row = {
   id: 'order',
@@ -14,6 +15,9 @@ const row = {
   total_satang: 2400,
   reservation_expires_at: new Date('2030-01-01'),
   extension_used: false,
+  table_session_id: 'session',
+  public_access_valid: true,
+  request_fingerprint: '',
 };
 const dto = {
   branchId: 'branch',
@@ -32,6 +36,7 @@ const menu = {
   reserved_quantity: 2,
   sold_quantity: 3,
 };
+row.request_fingerprint = orderFingerprint(dto);
 const result = (rows: object[] = []) => ({ rows, rowCount: rows.length });
 
 describe('OrdersService', () => {
@@ -143,6 +148,7 @@ describe('OrdersService', () => {
           '080',
           'A1',
           price * 2,
+          orderFingerprint(dto),
         ],
       );
       expect(query).toHaveBeenCalledWith(
@@ -221,5 +227,72 @@ describe('OrdersService', () => {
     await expect(service.extend('public')).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+  it.each([
+    { table_session_id: 'another-session' },
+    { request_fingerprint: 'different-body' },
+    { request_fingerprint: null },
+    { public_access_valid: false },
+  ])(
+    'rejects unsafe idempotency replay %p on both lookup paths',
+    async (override) => {
+      const stored = result([{ ...row, ...override }]);
+      query.mockResolvedValueOnce(stored);
+      await expect(service.create(dto, 'key')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(query).toHaveBeenCalledTimes(1);
+      transaction.mockRejectedValueOnce({
+        code: '23505',
+        constraint: 'orders_branch_idempotency_unique',
+      });
+      direct.mockResolvedValueOnce(stored);
+      await expect(service.create(dto, 'key')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    },
+  );
+  it('loads multiple menu items once and preserves their price/quantity association', async () => {
+    query
+      .mockResolvedValueOnce(result())
+      .mockResolvedValueOnce(
+        result([
+          { table_id: 'table', table_number: 'A1', corporation_id: 'corp' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        result([
+          { ...menu, product_id: 'a', base_price: 100 },
+          { ...menu, product_id: 'z', base_price: 200 },
+        ]),
+      )
+      .mockResolvedValueOnce(result([{ day: '2026-09-05' }]))
+      .mockResolvedValueOnce(result([{ last_number: '12' }]))
+      .mockResolvedValueOnce(result([row]));
+    const items = [
+      { productId: 'z', quantity: 2 },
+      { productId: 'a', quantity: 1 },
+    ];
+    await service.create({ ...dto, items }, 'key');
+    const menuCalls = query.mock.calls.filter(([sql]: [string]) =>
+      sql.includes('from unnest'),
+    );
+    expect(menuCalls).toHaveLength(1);
+    expect(menuCalls[0]).toEqual([
+      expect.stringContaining('order by i.product_id'),
+      ['corp', 'branch', ['z', 'a'], [null, null]],
+    ]);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('insert into payments'),
+      ['order', 'KB-public', 500],
+    );
+    expect(items[0].productId).toBe('z');
+  });
+  it('rejects totals that cannot fit the database before allocating an order number', async () => {
+    arrange({ ...menu, base_price: 2_147_483_647 });
+    await expect(service.create(dto, 'key')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(query).toHaveBeenCalledTimes(3);
   });
 });

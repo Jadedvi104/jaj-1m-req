@@ -20,6 +20,7 @@ describe('DatabaseService transaction safety', () => {
       connect,
       query: poolQuery,
       end,
+      on: jest.fn(),
     }));
     service = new DatabaseService(
       new ConfigService({
@@ -107,5 +108,91 @@ describe('DatabaseService transaction safety', () => {
     } finally {
       environment.restore();
     }
+  });
+  it('verifies database certificates by default and supports a custom CA', () => {
+    new DatabaseService(
+      new ConfigService({
+        DATABASE_URL: 'postgres://test',
+        DATABASE_SSL_CA: 'ca-pem',
+      }),
+    );
+    expect(Pool).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ssl: { rejectUnauthorized: true, ca: 'ca-pem' },
+      }),
+    );
+  });
+  it.each([
+    'sslmode=no-verify',
+    'ssl=false',
+    'sslrootcert=file',
+    'uselibpqcompat=true',
+  ])('rejects URL TLS overrides: %s', (parameter) => {
+    expect(
+      () =>
+        new DatabaseService(
+          new ConfigService({ DATABASE_URL: `postgres://test?${parameter}` }),
+        ),
+    ).toThrow('Configure database TLS');
+  });
+  it.each(['0', '-1', '1.5', '101', 'NaN'])(
+    'rejects invalid pool size %s',
+    (size) => {
+      expect(
+        () =>
+          new DatabaseService(
+            new ConfigService({
+              DATABASE_URL: 'postgres://test',
+              DATABASE_POOL_SIZE: size,
+            }),
+          ),
+      ).toThrow('DATABASE_POOL_SIZE');
+    },
+  );
+  it('rejects an ambiguous TLS flag', () => {
+    expect(
+      () =>
+        new DatabaseService(
+          new ConfigService({
+            DATABASE_URL: 'postgres://test',
+            DATABASE_SSL: 'yes',
+          }),
+        ),
+    ).toThrow('DATABASE_SSL');
+  });
+  it('discards a broken connection and preserves the original error if rollback fails', async () => {
+    const original = new Error('original failure');
+    query
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('rollback failure'));
+    await expect(
+      service.transaction(() => Promise.reject(original)),
+    ).rejects.toBe(original);
+    expect(release).toHaveBeenCalledWith(true);
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+  it('releases the connection before retry backoff', async () => {
+    jest.useFakeTimers();
+    try {
+      const work = jest
+        .fn()
+        .mockRejectedValueOnce({ code: '40001' })
+        .mockResolvedValue('ok');
+      const pending = service.transaction(work);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(work).toHaveBeenCalledTimes(1);
+      await jest.runAllTimersAsync();
+      await expect(pending).resolves.toBe('ok');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('preserves non-Error rejections', async () => {
+    await expect(
+      // Deliberately test a third-party dependency rejecting with a non-Error.
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      service.transaction(() => Promise.reject(null)),
+    ).rejects.toBeNull();
   });
 });

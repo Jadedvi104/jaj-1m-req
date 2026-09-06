@@ -10,10 +10,10 @@ export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  name: string;
+  name!: string;
   @IsNumber()
   @Min(0)
-  price: number;
+  price!: number;
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @MaxLength(2000)

@@ -20,7 +20,8 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxPublisherService.name);
   private producer?: Producer;
   private timer?: NodeJS.Timeout;
-  private publishing = false;
+  private activeBatch?: Promise<void>;
+  private stopping = false;
 
   constructor(
     private readonly db: DatabaseService,
@@ -56,13 +57,21 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
+    await this.activeBatch;
     await this.producer?.disconnect();
   }
 
-  private async publishBatch(): Promise<void> {
-    if (!this.producer || this.publishing) return;
-    this.publishing = true;
+  private publishBatch(): Promise<void> {
+    if (!this.producer || this.stopping) return Promise.resolve();
+    this.activeBatch ??= this.runBatch(this.producer).finally(() => {
+      this.activeBatch = undefined;
+    });
+    return this.activeBatch;
+  }
+
+  private async runBatch(producer: Producer): Promise<void> {
     try {
       await this.db.transaction(async (tx) => {
         const result = await tx.query<OutboxRow>(
@@ -71,7 +80,7 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
            for update skip locked limit 100`,
         );
         if (!result.rowCount) return;
-        await this.producer!.send({
+        await producer.send({
           topic: this.config.get('KAFKA_ORDER_TOPIC', 'orders.v1'),
           acks: -1,
           messages: result.rows.map((event) => ({
@@ -95,8 +104,6 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
         'Outbox publication failed; events will retry',
         error instanceof Error ? error.stack : String(error),
       );
-    } finally {
-      this.publishing = false;
     }
   }
 }

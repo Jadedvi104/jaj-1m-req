@@ -3,8 +3,8 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  name: string;
+  name!: string;
   @IsEmail()
   @MaxLength(254)
-  email: string;
+  email!: string;
 }

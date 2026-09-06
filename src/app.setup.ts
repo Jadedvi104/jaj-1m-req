@@ -12,6 +12,8 @@ export function configureApp(app: INestApplication): void {
       transform: true,
       whitelist: true,
       forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
+      validationError: { target: false, value: false },
     }),
   );
   app.enableShutdownHooks();

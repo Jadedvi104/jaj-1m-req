@@ -5,9 +5,13 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "overrides": {
+    "fastify": "5.12.1",
+    "qs": "6.16.0"
+  },
   "scripts": {
     "build": "nest build",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql -f database/migrations/002_order_request_fingerprint.sql",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

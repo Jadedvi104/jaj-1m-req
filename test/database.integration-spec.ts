@@ -51,6 +51,15 @@ describe('PostgreSQL integration: real migration and domain transactions', () =>
       ),
     );
     orders = new OrdersService(db);
+    await db.query(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../database/migrations/002_order_request_fingerprint.sql',
+        ),
+        'utf8',
+      ),
+    );
     payments = new PaymentsService(db);
     sessions = new TableSessionsService(db);
     expirer = new ReservationExpirerService(db);
@@ -376,6 +385,80 @@ describe('PostgreSQL integration: real migration and domain transactions', () =>
     await expect(orders.findPublic(created.publicReference)).rejects.toThrow(
       'Order not found',
     );
+    await expect(orders.extend(created.publicReference)).rejects.toThrow(
+      'cannot be extended',
+    );
+    await expect(orders.create(dto(), 'public-expiry')).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+  it('binds idempotency to the originating session and complete request', async () => {
+    const original = dto();
+    await orders.create(original, 'bound-key');
+    const anotherSession = await sessions.create({
+      branchId: branch,
+      tablePublicId: publicTable,
+      rotatingCode: 'code',
+    });
+    await expect(
+      orders.create(
+        { ...original, tableSessionId: anotherSession.sessionId },
+        'bound-key',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      orders.create({ ...original, customerPhone: 'different' }, 'bound-key'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await count('orders')).toBe(1);
+    expect(await stock()).toEqual({ reserved_quantity: 1, sold_quantity: 0 });
+  });
+  it('preserves review-required payment data and emits only one review event for retries', async () => {
+    const created = await orders.create(dto(), 'review-retry');
+    const confirmation = {
+      paymentReference: created.paymentReference!,
+      transactionId: 'original-bank-txn',
+      amountSatang: 999,
+    };
+    await payments.confirm(confirmation);
+    await expect(payments.confirm(confirmation)).resolves.toMatchObject({
+      status: 'review_required',
+    });
+    await expect(
+      payments.confirm({
+        ...confirmation,
+        transactionId: 'replacement',
+        amountSatang: 1000,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      payments.confirm({ ...confirmation, amountSatang: 1000 }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await count('outbox_events')).toBe(2);
+    expect(await stock()).toEqual({ reserved_quantity: 1, sold_quantity: 0 });
+    expect(
+      (
+        await db.query(
+          'select provider_transaction_id, received_amount_satang from payments where order_id=$1',
+          [created.id],
+        )
+      ).rows[0],
+    ).toMatchObject({
+      provider_transaction_id: 'original-bank-txn',
+      received_amount_satang: 999,
+    });
+  });
+  it('reserves overlapping multi-product requests supplied in opposite orders', async () => {
+    const items = [
+      { productId: product, quantity: 1 },
+      { productId: product2, quantity: 1 },
+    ];
+    const results = await Promise.all([
+      orders.create({ ...dto(), items }, 'ordered-a'),
+      orders.create({ ...dto(), items: [...items].reverse() }, 'ordered-b'),
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results.map((order) => order.totalSatang)).toEqual([2000, 2000]);
+    expect(await stock()).toEqual({ reserved_quantity: 2, sold_quantity: 0 });
   });
   it('enforces inventory constraints and cross-branch table relationships', async () => {
     await expect(

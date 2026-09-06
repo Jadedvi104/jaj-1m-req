@@ -12,12 +12,34 @@ describe('ReservationExpirerService', () => {
         work({ query } as Transaction),
     } as DatabaseService);
   });
-  afterEach(() => {
-    service.onModuleDestroy();
+  afterEach(async () => {
+    await service.onModuleDestroy();
     jest.useRealTimers();
     jest.restoreAllMocks();
   });
   it('does nothing when no reservations are due', async () => {
+    await service.expireBatch();
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+  it('coalesces overlapping batches and waits for completion during shutdown', async () => {
+    let finish!: (value: { rows: object[] }) => void;
+    query.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const first = service.expireBatch();
+    const second = service.expireBatch();
+    expect(second).toBe(first);
+    let stopped = false;
+    const shutdown = service.onModuleDestroy().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    expect(query).toHaveBeenCalledTimes(1);
+    finish({ rows: [] });
+    await Promise.all([first, second, shutdown]);
     await service.expireBatch();
     expect(query).toHaveBeenCalledTimes(1);
   });
@@ -60,7 +82,7 @@ describe('ReservationExpirerService', () => {
     service.onModuleInit();
     await jest.advanceTimersByTimeAsync(10000);
     expect(query).toHaveBeenCalledTimes(1);
-    service.onModuleDestroy();
+    await service.onModuleDestroy();
     await jest.advanceTimersByTimeAsync(20000);
     expect(query).toHaveBeenCalledTimes(1);
   });

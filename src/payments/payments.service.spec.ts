@@ -16,6 +16,9 @@ const payment = {
   payment_status: 'pending',
   order_status: 'pending_payment',
   reservation_expires_at: new Date('2030-01-01'),
+  provider_transaction_id: null,
+  received_amount_satang: null,
+  reservation_active: true,
 };
 
 describe('PaymentsService', () => {
@@ -68,27 +71,27 @@ describe('PaymentsService', () => {
     expect(query).toHaveBeenCalledTimes(5);
   });
   it('acknowledges duplicate confirmation without selling twice', async () => {
-    arrange({ payment_status: 'confirmed' });
-    query.mockResolvedValueOnce({
-      rows: [{ provider_transaction_id: 'bank-1' }],
-      rowCount: 1,
+    arrange({
+      payment_status: 'confirmed',
+      provider_transaction_id: 'bank-1',
+      received_amount_satang: 1200,
     });
     await expect(service.confirm(dto)).resolves.toEqual({
       orderId: 'order',
       status: 'paid',
     });
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(1);
   });
   it('rejects another transaction for an already confirmed payment', async () => {
-    arrange({ payment_status: 'confirmed' });
-    query.mockResolvedValueOnce({
-      rows: [{ provider_transaction_id: 'other' }],
-      rowCount: 1,
+    arrange({
+      payment_status: 'confirmed',
+      provider_transaction_id: 'other',
+      received_amount_satang: 1200,
     });
     await expect(service.confirm(dto)).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(1);
   });
   it.each([0, 1199, 1201])(
     'routes amount %p to review without selling stock',
@@ -109,8 +112,7 @@ describe('PaymentsService', () => {
   it.each([
     { order_status: 'expired' },
     { order_status: 'paid' },
-    { reservation_expires_at: new Date('2026-09-04') },
-    { reservation_expires_at: new Date('2026-09-05T00:00:00Z') },
+    { reservation_active: false },
   ])(
     'routes late or ineligible confirmation to review: %p',
     async (overrides) => {
@@ -132,5 +134,53 @@ describe('PaymentsService', () => {
     query.mockRejectedValueOnce(new Error('inventory constraint'));
     await expect(service.confirm(dto)).rejects.toThrow('inventory constraint');
     expect(query).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    'confirmed',
+    'review_required',
+    'refund_pending',
+    'partially_refunded',
+  ])('acknowledges identical retries in %s without writes', async (status) => {
+    arrange({
+      payment_status: status,
+      provider_transaction_id: dto.transactionId,
+      received_amount_satang: dto.amountSatang,
+    });
+    await expect(service.confirm(dto)).resolves.toMatchObject({
+      status: status === 'confirmed' ? 'paid' : status,
+    });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+  it.each(['confirmed', 'review_required'])(
+    'rejects altered amounts after %s',
+    async (status) => {
+      arrange({
+        payment_status: status,
+        provider_transaction_id: dto.transactionId,
+        received_amount_satang: 1199,
+      });
+      await expect(service.confirm(dto)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(query).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('does not replace a mismatched payment with another transaction', async () => {
+    arrange({
+      payment_status: 'review_required',
+      provider_transaction_id: 'original',
+      received_amount_satang: 100,
+    });
+    await expect(service.confirm(dto)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+  it('fails closed for non-pending payments with no recorded transaction', async () => {
+    arrange({ payment_status: 'failed' });
+    await expect(service.confirm(dto)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

@@ -99,4 +99,32 @@ describe('Redis failure and concurrency behavior', () => {
     client.get.mockRejectedValue(new Error('command timeout'));
     await expect(service.get('key')).rejects.toThrow('command timeout');
   });
+  it.each([0, -1, 0.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid TTL %p before connecting',
+    async (ttl) => {
+      const { client, service } = setup();
+      await expect(service.set('key', 'value', ttl)).rejects.toThrow(
+        RangeError,
+      );
+      expect(client.connect).not.toHaveBeenCalled();
+      expect(client.set).not.toHaveBeenCalled();
+    },
+  );
+  it('awaits a pending connection before closing and refuses new work after shutdown', async () => {
+    const { client, service } = setup();
+    let finish!: (value: typeof client) => void;
+    client.connect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const pending = service.get('key');
+    const shutdown = service.onApplicationShutdown();
+    await expect(service.get('other')).rejects.toThrow('shutting down');
+    expect(client.close).not.toHaveBeenCalled();
+    client.isOpen = true;
+    finish(client);
+    await Promise.all([pending, shutdown]);
+    expect(client.close).toHaveBeenCalledTimes(1);
+  });
 });

@@ -14,7 +14,9 @@ interface PaymentRow {
   expected_amount_satang: number;
   payment_status: string;
   order_status: string;
-  reservation_expires_at: Date;
+  provider_transaction_id: string | null;
+  received_amount_satang: number | null;
+  reservation_active: boolean;
 }
 
 @Injectable()
@@ -26,28 +28,40 @@ export class PaymentsService {
   ): Promise<{ orderId: string; status: string }> {
     return this.db.transaction(async (tx) => {
       const result = await tx.query<PaymentRow>(
-        `select p.id payment_id, p.order_id, p.expected_amount_satang,
+        `with locked_payment as materialized (
+         select p.id payment_id, p.order_id, p.expected_amount_satang,
                 p.status payment_status, o.status order_status, o.branch_id,
-                o.business_date::text, o.reservation_expires_at
+                o.business_date::text, o.reservation_expires_at,
+                p.provider_transaction_id, p.received_amount_satang
          from payments p join orders o on o.id = p.order_id
-         where p.provider_payment_reference = $1 for update of p, o`,
+         where p.provider_payment_reference = $1 for update of p, o
+         ) select *, reservation_expires_at > clock_timestamp() reservation_active
+           from locked_payment`,
         [dto.paymentReference],
       );
       if (!result.rowCount)
         throw new NotFoundException('Payment reference not found');
       const payment = result.rows[0];
 
-      if (payment.payment_status === 'confirmed') {
-        const duplicate = await tx.query<{ provider_transaction_id: string }>(
-          'select provider_transaction_id from payments where id = $1',
-          [payment.payment_id],
-        );
-        if (duplicate.rows[0].provider_transaction_id !== dto.transactionId) {
+      if (payment.provider_transaction_id !== null) {
+        if (
+          payment.provider_transaction_id !== dto.transactionId ||
+          payment.received_amount_satang !== dto.amountSatang
+        ) {
           throw new ConflictException(
-            'Payment reference was already confirmed by another transaction',
+            'Payment reference already has a different confirmation',
           );
         }
-        return { orderId: payment.order_id, status: 'paid' };
+        return {
+          orderId: payment.order_id,
+          status:
+            payment.payment_status === 'confirmed'
+              ? 'paid'
+              : payment.payment_status,
+        };
+      }
+      if (payment.payment_status !== 'pending') {
+        throw new ConflictException('Payment requires reconciliation');
       }
       if (dto.amountSatang !== payment.expected_amount_satang) {
         await tx.query(
@@ -66,7 +80,7 @@ export class PaymentsService {
       }
       if (
         payment.order_status !== 'pending_payment' ||
-        payment.reservation_expires_at <= new Date()
+        !payment.reservation_active
       ) {
         await tx.query(
           `update payments set received_amount_satang=$2, provider_transaction_id=$3,
