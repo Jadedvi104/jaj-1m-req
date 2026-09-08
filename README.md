@@ -25,7 +25,7 @@ changes, verification results, and remaining production release requirements.
 ## Requirements
 
 - Node.js 22 LTS+
-- PostgreSQL 17+ or Supabase Cloud Postgres
+- PostgreSQL 17+ (Azure Database for PostgreSQL Flexible Server for cloud development)
 - A Kafka-compatible managed service for production
 - Docker Desktop for the local container stack
 
@@ -36,7 +36,7 @@ cp .env.example .env
 npm install
 ```
 
-Use a Supabase connection string in `DATABASE_URL`, budget `DATABASE_POOL_SIZE` across all replicas, replace the example webhook token, and configure the Azure Kafka-compatible endpoint through the `KAFKA_*` variables. Never commit `.env` or bank credentials.
+Use an Azure PostgreSQL connection string in `DATABASE_URL` and set `DATABASE_SSL=true` for Azure. Budget `DATABASE_POOL_SIZE` across all replicas, replace the example webhook token, and configure the Azure Kafka-compatible endpoint through the `KAFKA_*` variables. Never commit `.env` or bank credentials. See [Azure development database setup](infra/README.md) for the infrastructure definition and credential handling.
 
 ## Local development
 
@@ -46,11 +46,16 @@ Start Docker Desktop, then run:
 docker compose up --build
 ```
 
-The PostgreSQL image applies `database/migrations/001_initial_schema.sql` when its data volume is first created. To migrate an empty Supabase/PostgreSQL database directly:
+The PostgreSQL image applies the files in `database/migrations/` when its data volume is first created. To migrate an empty PostgreSQL database directly:
 
 ```bash
 DATABASE_URL='postgresql://...' npm run db:migrate
 ```
+
+For Azure, the migration command uses `psql`, so configure its TLS verification
+separately with `PGSSLMODE=verify-full` and `PGSSLROOTCERT` pointing to a trusted
+root CA PEM file. The application's `DATABASE_SSL` settings apply to the Node.js
+database client, not to `psql`.
 
 To run the API without Docker:
 
@@ -198,7 +203,7 @@ database setup, smoke-load command, reproduced defects and remaining release gat
 
 ## Planned slices
 
-- Supabase Auth and hierarchical staff authorization.
+- Staff authentication (provider to be selected) and hierarchical staff authorization.
 - Rotating table-code issuance.
 - KBank QR generation, official webhook mapping, and reconciliation polling.
 - Staff acceptance, kitchen display, substitutions, and manual partial refunds.

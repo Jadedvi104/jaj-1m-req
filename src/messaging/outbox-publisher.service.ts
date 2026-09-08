@@ -41,6 +41,8 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
     const kafka = new Kafka({
       clientId: 'restaurant-ordering-api',
       brokers: brokers.split(',').map((broker) => broker.trim()),
+      // Event Hubs requires a longer request timeout for idempotent producers.
+      requestTimeout: 60_000,
       ssl: this.config.get('KAFKA_SSL', 'true') === 'true',
       sasl:
         username && password
@@ -50,6 +52,7 @@ export class OutboxPublisherService implements OnModuleInit, OnModuleDestroy {
     this.producer = kafka.producer({
       allowAutoTopicCreation: false,
       idempotent: true,
+      metadataMaxAge: 180_000,
     });
     await this.producer.connect();
     this.timer = setInterval(() => void this.publishBatch(), 250);

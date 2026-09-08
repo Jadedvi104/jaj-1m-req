@@ -33,7 +33,17 @@ describe('PostgreSQL integration: real migration and domain transactions', () =>
   let expirer: ReservationExpirerService;
   let sessionId: string;
   beforeAll(async () => {
-    admin = new Pool({ connectionString: url, max: 1 });
+    admin = new Pool({
+      connectionString: url,
+      max: 1,
+      ssl:
+        process.env.TEST_DATABASE_SSL === 'true'
+          ? {
+              rejectUnauthorized: true,
+              ca: process.env.TEST_DATABASE_SSL_CA,
+            }
+          : false,
+    });
     await admin.query(`create schema "${schema}"`);
     const scoped = new URL(url);
     scoped.searchParams.set('options', `-c search_path=${schema},public`);
@@ -41,6 +51,7 @@ describe('PostgreSQL integration: real migration and domain transactions', () =>
       new ConfigService({
         DATABASE_URL: scoped.toString(),
         DATABASE_SSL: process.env.TEST_DATABASE_SSL ?? 'false',
+        DATABASE_SSL_CA: process.env.TEST_DATABASE_SSL_CA,
         DATABASE_POOL_SIZE: '6',
       }),
     );

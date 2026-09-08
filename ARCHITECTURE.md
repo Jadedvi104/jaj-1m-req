@@ -45,7 +45,7 @@ Stateless NestJS + Fastify replicas
   |              |                  +--> Transactional outbox
   |              |                              |
   |              v                              v
-  |        Supabase Postgres                  Kafka
+  |        Azure PostgreSQL                   Kafka
   |        through bounded pools               |
   v                                             v
 Distributed cache                     Consumer groups / workers
@@ -81,7 +81,7 @@ At 50,000 RPS, approximate active request concurrency is:
 
 All internal pools and queues must remain bounded at these concurrency levels.
 
-## Supabase/PostgreSQL
+## Azure PostgreSQL
 
 PostgreSQL is the durable source of truth. It should not receive one or more expensive queries for every HTTP request at the target rate.
 
@@ -104,13 +104,13 @@ The aggregate pool size must remain below the database connection allowance:
 API replicas * API pool size
   + worker connections
   + migration and administration connections
-  + Supabase internal service connections
+  + headroom for Azure-managed connections
   <= available PostgreSQL connections
 ```
 
 Start with a small pool per replica and tune from measurements. Increasing the number of API replicas must not silently exhaust PostgreSQL connections.
 
-Choose direct, session-pooled, or transaction-pooled Supabase connections according to the deployment model. When using Supavisor transaction mode, disable prepared statements in the database client because that mode does not support them.
+Start with direct TLS connections to Azure Database for PostgreSQL Flexible Server and the application's bounded `pg` pools. Evaluate a shared connection pooler only when measured connection pressure requires it. The small development server is not sized for the production throughput target.
 
 ## Distributed Cache
 
@@ -255,8 +255,7 @@ The 50k RPS goal is achieved only when a production-equivalent environment demon
 ## References
 
 - [NestJS performance with Fastify](https://docs.nestjs.com/techniques/performance)
-- [Supabase: connecting to Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres)
-- [Supabase: connection management](https://supabase.com/docs/guides/database/connection-management)
+- [Azure PostgreSQL: TLS connections](https://learn.microsoft.com/en-us/azure/postgresql/security/security-tls-how-to-connect)
 - [Apache Kafka documentation](https://kafka.apache.org/documentation/)
 - [Docker resource constraints](https://docs.docker.com/engine/containers/resource_constraints/)
 - [Node.js cluster documentation](https://nodejs.org/api/cluster.html)
