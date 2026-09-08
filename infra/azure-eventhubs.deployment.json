@@ -1,0 +1,22 @@
+{
+  "subscriptionId": "98a11462-0668-4f32-9f32-47ff6f92ca35",
+  "resourceGroup": "rg-jaj-dev-sea",
+  "deploymentName": "jaj-eventhubs-dev",
+  "namespace": "jaj-eh-dev-sea-98a11462",
+  "broker": "jaj-eh-dev-sea-98a11462.servicebus.windows.net:9093",
+  "location": "southeastasia",
+  "sku": "Standard",
+  "throughputUnits": 1,
+  "autoInflateEnabled": false,
+  "topic": "orders.v1",
+  "partitions": 2,
+  "retentionHours": 24,
+  "authorizationRule": "orders-producer",
+  "rights": [
+    "Send"
+  ],
+  "infrastructureStatus": "Succeeded",
+  "applicationSetupStatus": "Verified: live application outbox publication acknowledged by Kafka",
+  "verifiedAt": "2026-09-08T04:45:42.211Z",
+  "testEventId": "a2dd92f6-4870-437f-90c8-483e6a04ac90"
+}

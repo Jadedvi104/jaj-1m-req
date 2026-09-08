@@ -1,0 +1,16 @@
+{
+  "subscriptionId": "98a11462-0668-4f32-9f32-47ff6f92ca35",
+  "resourceGroup": "rg-jaj-dev-sea",
+  "deploymentName": "jaj-postgresql-dev",
+  "serverName": "jaj-pg-dev-sea-98a11462",
+  "host": "jaj-pg-dev-sea-98a11462.postgres.database.azure.com",
+  "location": "southeastasia",
+  "version": "17",
+  "sku": "Standard_B1ms",
+  "databases": [
+    "restaurant",
+    "restaurant_test"
+  ],
+  "infrastructureStatus": "Succeeded",
+  "applicationSetupStatus": "Complete: developer firewall rule, jaj_app login, both schema migrations, verified TLS, and 22 passing database integration tests"
+}

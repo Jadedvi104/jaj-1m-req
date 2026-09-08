@@ -1,28 +1,14 @@
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  NestFastifyApplication,
-} from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
+import { configureApp, createHttpAdapter } from './app.setup';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({
-      bodyLimit: 64 * 1024,
-      requestTimeout: 10_000,
-    }),
+    createHttpAdapter(),
   );
-  app.setGlobalPrefix('api');
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-  app.enableShutdownHooks();
+  configureApp(app);
   await app.listen({ port: Number(process.env.PORT ?? 3000), host: '0.0.0.0' });
 }
 void bootstrap();

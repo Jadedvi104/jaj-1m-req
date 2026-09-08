@@ -1,0 +1,13 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "(\\.spec|\\.e2e-spec)\\.ts$",
+  "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+  "collectCoverageFrom": ["src/**/*.ts", "!src/**/*.spec.ts", "!src/main.ts"],
+  "coverageDirectory": "coverage",
+  "coverageReporters": ["text", "lcov", "json-summary"],
+  "coverageThreshold": {
+    "global": { "statements": 85, "branches": 80, "functions": 85, "lines": 85 }
+  }
+}

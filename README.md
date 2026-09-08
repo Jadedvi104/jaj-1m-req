@@ -19,10 +19,13 @@ The current vertical slice supports:
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the scaling plan.
 
+See [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for the current audit, compatibility
+changes, verification results, and remaining production release requirements.
+
 ## Requirements
 
 - Node.js 22 LTS+
-- PostgreSQL 17+ or Supabase Cloud Postgres
+- PostgreSQL 17+ (Azure Database for PostgreSQL Flexible Server for cloud development)
 - A Kafka-compatible managed service for production
 - Docker Desktop for the local container stack
 
@@ -33,7 +36,7 @@ cp .env.example .env
 npm install
 ```
 
-Use a Supabase connection string in `DATABASE_URL`, budget `DATABASE_POOL_SIZE` across all replicas, replace the example webhook token, and configure the Azure Kafka-compatible endpoint through the `KAFKA_*` variables. Never commit `.env` or bank credentials.
+Use an Azure PostgreSQL connection string in `DATABASE_URL` and set `DATABASE_SSL=true` for Azure. Budget `DATABASE_POOL_SIZE` across all replicas, replace the example webhook token, and configure the Azure Kafka-compatible endpoint through the `KAFKA_*` variables. Never commit `.env` or bank credentials. See [Azure development database setup](infra/README.md) for the infrastructure definition and credential handling.
 
 ## Local development
 
@@ -43,11 +46,16 @@ Start Docker Desktop, then run:
 docker compose up --build
 ```
 
-The PostgreSQL image applies `database/migrations/001_initial_schema.sql` when its data volume is first created. To migrate an empty Supabase/PostgreSQL database directly:
+The PostgreSQL image applies the files in `database/migrations/` when its data volume is first created. To migrate an empty PostgreSQL database directly:
 
 ```bash
 DATABASE_URL='postgresql://...' npm run db:migrate
 ```
+
+For Azure, the migration command uses `psql`, so configure its TLS verification
+separately with `PGSSLMODE=verify-full` and `PGSSLROOTCERT` pointing to a trusted
+root CA PEM file. The application's `DATABASE_SSL` settings apply to the Node.js
+database client, not to `psql`.
 
 To run the API without Docker:
 
@@ -65,7 +73,9 @@ npm run start:dev
 - `PATCH /api/users/:id` and `PATCH /api/products/:id`
 - `DELETE /api/users/:id` and `DELETE /api/products/:id`
 
-Data is held in memory and resets when the application restarts.
+These users/products routes are development examples. They return 404 unless
+`NODE_ENV=development` and `ENABLE_DEMO_CRUD=true` are both configured. They are
+always blocked in production. Data is held in memory and resets on restart.
 
 ## Redis
 
@@ -102,7 +112,11 @@ $ yarn install
 
 ### Create an order and reservation
 
-`POST /api/orders` requires an `Idempotency-Key` header.
+`POST /api/orders` requires an `Idempotency-Key` header containing 1–128 visible
+ASCII characters, without spaces. Retries must use the same table session and
+request data; conflicting or expired replays return 409. Item ordering and UUID
+letter case do not affect retry identity. Orders allow at most 100 distinct
+products and 1,000 units per product; totals cannot exceed 2,147,483,647 satang.
 
 ```json
 {
@@ -147,6 +161,28 @@ X-Webhook-Token: configured-secret
 
 The final KBank adapter must replace the interim shared-token check with the bank's documented signature verification and payload mapping.
 
+Identical webhook retries acknowledge the recorded payment state without new
+inventory changes or events. A changed amount or transaction ID after a recorded
+confirmation returns 409 and requires reconciliation.
+
+## Upgrading an existing database
+
+Apply `database/migrations/002_order_request_fingerprint.sql` once before starting
+the updated API. The `db:migrate` command initializes an **empty** database with
+both migrations; do not rerun the initial schema on an existing database.
+Docker initialization also only applies migrations when creating a new volume.
+
+The new fingerprint column intentionally remains null on historical orders.
+Their existing public links continue to work until expiry, but replaying their
+old idempotency keys returns 409 because the original request cannot be verified.
+Drain old application instances before deploying the new writer.
+
+Production database connections should use `DATABASE_SSL=true` with a trusted
+certificate. Set `DATABASE_SSL_CA` to a custom CA PEM if needed. Remove `ssl*`
+and `uselibpqcompat` query parameters from `DATABASE_URL`; TLS is configured
+through these explicit environment settings. `DATABASE_SSL=false` is for a
+deliberately trusted local connection. Pool size must be an integer from 1–100.
+
 ### Health
 
 ```text
@@ -157,14 +193,17 @@ GET /api/health/ready
 ## Verification
 
 ```bash
-npm run build
-npm run lint
-npm test -- --runInBand
+npm run check
+# Requires TEST_DATABASE_URL pointing to a disposable PostgreSQL database:
+npm run test:integration
 ```
+
+See [TESTING.md](./TESTING.md) for the architecture assessment, test-case matrix,
+database setup, smoke-load command, reproduced defects and remaining release gates.
 
 ## Planned slices
 
-- Supabase Auth and hierarchical staff authorization.
+- Staff authentication (provider to be selected) and hierarchical staff authorization.
 - Rotating table-code issuance.
 - KBank QR generation, official webhook mapping, and reconciliation polling.
 - Staff acceptance, kitchen display, substitutions, and manual partial refunds.
