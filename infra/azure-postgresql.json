@@ -1,0 +1,114 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Singapore development PostgreSQL. Public endpoint accepts no client connections until an explicit firewall rule is added. Small fixed storage and no HA are development choices."
+  },
+  "parameters": {
+    "serverName": {
+      "type": "string",
+      "defaultValue": "jaj-pg-dev-sea-98a11462"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "southeastasia"
+    },
+    "administratorLogin": {
+      "type": "string",
+      "defaultValue": "jajadmin"
+    },
+    "administratorPassword": {
+      "type": "secureString",
+      "metadata": {
+        "description": "Provide from local secret storage; never commit a value."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2025-08-01",
+      "name": "[parameters('serverName')]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "project": "jaj-1m-req",
+        "environment": "development"
+      },
+      "sku": {
+        "name": "Standard_B1ms",
+        "tier": "Burstable"
+      },
+      "properties": {
+        "version": "17",
+        "createMode": "Default",
+        "administratorLogin": "[parameters('administratorLogin')]",
+        "administratorLoginPassword": "[parameters('administratorPassword')]",
+        "authConfig": {
+          "passwordAuth": "Enabled",
+          "activeDirectoryAuth": "Disabled"
+        },
+        "storage": {
+          "storageSizeGB": 32,
+          "type": "Premium_LRS",
+          "autoGrow": "Disabled"
+        },
+        "backup": {
+          "backupRetentionDays": 7,
+          "geoRedundantBackup": "Disabled"
+        },
+        "highAvailability": {
+          "mode": "Disabled"
+        },
+        "network": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+      "apiVersion": "2025-08-01",
+      "name": "[concat(parameters('serverName'), '/restaurant')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]"
+      ],
+      "properties": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8"
+      }
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers/databases",
+      "apiVersion": "2025-08-01",
+      "name": "[concat(parameters('serverName'), '/restaurant_test')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]"
+      ],
+      "properties": {
+        "charset": "UTF8",
+        "collation": "en_US.utf8"
+      }
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers/configurations",
+      "apiVersion": "2025-08-01",
+      "name": "[concat(parameters('serverName'), '/azure.extensions')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]"
+      ],
+      "properties": {
+        "value": "pgcrypto",
+        "source": "user-override"
+      }
+    }
+  ],
+  "outputs": {
+    "serverName": {
+      "type": "string",
+      "value": "[parameters('serverName')]"
+    },
+    "host": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))).fullyQualifiedDomainName]"
+    }
+  }
+}

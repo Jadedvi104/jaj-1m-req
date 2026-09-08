@@ -1,0 +1,110 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Development Kafka-compatible Event Hubs. Fixed capacity, one-day retention, developer-IP firewall, and send-only application policy."
+  },
+  "parameters": {
+    "namespaceName": {
+      "type": "string",
+      "defaultValue": "jaj-eh-dev-sea-98a11462"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "southeastasia"
+    },
+    "developerIp": {
+      "type": "string",
+      "metadata": {
+        "description": "Current authorized developer public IPv4 address."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2026-01-01",
+      "name": "[parameters('namespaceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard",
+        "tier": "Standard",
+        "capacity": 1
+      },
+      "tags": {
+        "project": "jaj-1m-req",
+        "environment": "development"
+      },
+      "properties": {
+        "kafkaEnabled": true,
+        "isAutoInflateEnabled": false,
+        "minimumTlsVersion": "1.2",
+        "publicNetworkAccess": "Enabled",
+        "disableLocalAuth": false
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/networkRuleSets",
+      "apiVersion": "2026-01-01",
+      "name": "[concat(parameters('namespaceName'), '/default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('namespaceName'))]"
+      ],
+      "properties": {
+        "defaultAction": "Deny",
+        "publicNetworkAccess": "Enabled",
+        "trustedServiceAccessEnabled": false,
+        "ipRules": [
+          {
+            "ipMask": "[concat(parameters('developerIp'), '/32')]",
+            "action": "Allow"
+          }
+        ],
+        "virtualNetworkRules": []
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2026-01-01",
+      "name": "[concat(parameters('namespaceName'), '/orders.v1')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('namespaceName'))]"
+      ],
+      "properties": {
+        "partitionCount": 2,
+        "retentionDescription": {
+          "cleanupPolicy": "Delete",
+          "retentionTimeInHours": 24
+        },
+        "status": "Active"
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs/authorizationRules",
+      "apiVersion": "2026-01-01",
+      "name": "[concat(parameters('namespaceName'), '/orders.v1/orders-producer')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('namespaceName'), 'orders.v1')]"
+      ],
+      "properties": {
+        "rights": [
+          "Send"
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "namespaceName": {
+      "type": "string",
+      "value": "[parameters('namespaceName')]"
+    },
+    "broker": {
+      "type": "string",
+      "value": "[concat(parameters('namespaceName'), '.servicebus.windows.net:9093')]"
+    },
+    "topic": {
+      "type": "string",
+      "value": "orders.v1"
+    }
+  }
+}

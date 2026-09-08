@@ -12,6 +12,8 @@ export class ReservationExpirerService
 {
   private readonly logger = new Logger(ReservationExpirerService.name);
   private timer?: NodeJS.Timeout;
+  private activeBatch?: Promise<void>;
+  private stopping = false;
   constructor(private readonly db: DatabaseService) {}
 
   onModuleInit() {
@@ -19,11 +21,21 @@ export class ReservationExpirerService
     this.timer.unref();
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
+    await this.activeBatch;
   }
 
-  async expireBatch(): Promise<void> {
+  expireBatch(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    this.activeBatch ??= this.runBatch().finally(() => {
+      this.activeBatch = undefined;
+    });
+    return this.activeBatch;
+  }
+
+  private async runBatch(): Promise<void> {
     try {
       await this.db.transaction(async (tx) => {
         const expired = await tx.query<{
@@ -48,7 +60,7 @@ export class ReservationExpirerService
           );
           await tx.query(
             `insert into outbox_events(aggregate_type,aggregate_id,event_type,partition_key,payload)
-             values ('order',$1,'order.expired',$2,jsonb_build_object('orderId',$1::text))`,
+             values ('order',$1::uuid,'order.expired',$2,jsonb_build_object('orderId',$1::uuid::text))`,
             [order.id, order.branch_id],
           );
         }

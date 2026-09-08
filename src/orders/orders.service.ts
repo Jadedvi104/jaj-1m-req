@@ -7,6 +7,11 @@ import {
 import { DatabaseService, Transaction } from '../database/database.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderView } from './order.types';
+import {
+  calculateOrderTotal,
+  orderFingerprint,
+  validateOrderRequest,
+} from './order-policy';
 
 interface MenuRow {
   product_id: string;
@@ -17,6 +22,9 @@ interface MenuRow {
   available_quantity: number;
   reserved_quantity: number;
   sold_quantity: number;
+}
+
+interface TableSessionRow {
   table_id: string;
   table_number: string;
   corporation_id: string;
@@ -31,6 +39,9 @@ interface OrderRow {
   reservation_expires_at: Date;
   extension_used: boolean;
   provider_payment_reference?: string;
+  table_session_id: string;
+  request_fingerprint: string | null;
+  public_access_valid: boolean;
 }
 
 @Injectable()
@@ -41,26 +52,21 @@ export class OrdersService {
     dto: CreateOrderDto,
     idempotencyKey: string,
   ): Promise<OrderView> {
-    if (!idempotencyKey?.trim())
-      throw new BadRequestException('Idempotency-Key header is required');
-    const duplicateIds = dto.items.map((item) => item.productId);
-    if (new Set(duplicateIds).size !== duplicateIds.length) {
-      throw new BadRequestException(
-        'Each product may appear only once; use quantity instead',
-      );
-    }
+    validateOrderRequest(dto, idempotencyKey);
+    const fingerprint = orderFingerprint(dto);
 
     try {
       return await this.db.transaction(async (tx) => {
         const existing = await tx.query<OrderRow>(
-          `select o.*, p.provider_payment_reference
+          `select o.*, p.provider_payment_reference, o.public_access_expires_at > now() public_access_valid
          from orders o left join payments p on p.order_id = o.id
          where o.branch_id = $1 and o.idempotency_key = $2`,
           [dto.branchId, idempotencyKey],
         );
-        if (existing.rowCount) return this.toView(existing.rows[0]);
+        if (existing.rowCount)
+          return this.replay(existing.rows[0], dto.tableSessionId, fingerprint);
 
-        const table = await tx.query<MenuRow>(
+        const table = await tx.query<TableSessionRow>(
           `select t.id table_id, t.table_number, b.corporation_id
          from table_sessions s join dining_tables t on t.id = s.table_id
          join branches b on b.id = t.branch_id
@@ -80,36 +86,43 @@ export class OrdersService {
             price: number;
           }
         > = [];
-        for (const item of dto.items) {
-          const menu = await tx.query<MenuRow>(
-            `select p.id product_id, p.name_th, p.name_en,
+        const requestedItems = dto.items.map((item) => ({
+          ...item,
+          productId: item.productId.toLowerCase(),
+        }));
+        // Fetch and lock every inventory row in database UUID order, regardless of caller order.
+        const menu = await tx.query<MenuRow>(
+          `select p.id product_id, p.name_th, p.name_en,
                   bmi.price_satang base_price, ps.price_satang size_price,
                   i.available_quantity, i.reserved_quantity, i.sold_quantity
-           from branch_menu_items bmi
+           from unnest($3::uuid[], $4::text[]) requested(product_id, size_code)
+           join branch_menu_items bmi on bmi.product_id = requested.product_id
            join products p on p.id = bmi.product_id and p.corporation_id = $1
            join daily_inventory i on i.branch_id = bmi.branch_id
              and i.product_id = bmi.product_id
              and i.business_date = (now() at time zone 'Asia/Bangkok')::date
            left join product_sizes ps on ps.branch_id = bmi.branch_id
-             and ps.product_id = bmi.product_id and ps.size_code = $4
-           where bmi.branch_id = $2 and bmi.product_id = $3 and bmi.available and p.active
+             and ps.product_id = bmi.product_id and ps.size_code = requested.size_code
+           where bmi.branch_id = $2 and bmi.available and p.active
+           order by i.product_id
            for update of i`,
-            [
-              table.rows[0].corporation_id,
-              dto.branchId,
-              item.productId,
-              item.sizeCode ?? null,
-            ],
-          );
-          if (
-            !menu.rowCount ||
-            (item.sizeCode && menu.rows[0].size_price === null)
-          ) {
+          [
+            table.rows[0].corporation_id,
+            dto.branchId,
+            requestedItems.map((item) => item.productId),
+            requestedItems.map((item) => item.sizeCode ?? null),
+          ],
+        );
+        const menuByProduct = new Map(
+          menu.rows.map((row) => [row.product_id, row]),
+        );
+        for (const item of requestedItems) {
+          const row = menuByProduct.get(item.productId);
+          if (!row || (item.sizeCode && row.size_price === null)) {
             throw new BadRequestException(
               `Product ${item.productId} or selected size is unavailable`,
             );
           }
-          const row = menu.rows[0];
           if (
             row.available_quantity - row.reserved_quantity - row.sold_quantity <
             item.quantity
@@ -125,8 +138,9 @@ export class OrdersService {
           });
         }
 
+        const total = calculateOrderTotal(selected);
         const businessDate = await tx.query<{ day: string }>(
-          `select (now() at time zone 'Asia/Bangkok')::date::text day`,
+          `select (now() at time zone 'Asia/Bangkok')::date::text as day`,
         );
         const counter = await tx.query<{ last_number: string }>(
           `insert into branch_order_counters(branch_id, business_date, last_number)
@@ -136,16 +150,12 @@ export class OrdersService {
          returning last_number`,
           [dto.branchId, businessDate.rows[0].day],
         );
-        const total = selected.reduce(
-          (sum, item) => sum + item.price * item.quantity,
-          0,
-        );
         const order = await tx.query<OrderRow>(
           `insert into orders(
            corporation_id, branch_id, table_id, table_session_id, business_date, display_number,
            idempotency_key, customer_name, customer_phone, table_number_snapshot,
-           subtotal_satang, total_satang, reservation_expires_at
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,now() + interval '10 minutes')
+           subtotal_satang, total_satang, reservation_expires_at, request_fingerprint
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,now() + interval '10 minutes',$12)
          returning *`,
           [
             table.rows[0].corporation_id,
@@ -159,6 +169,7 @@ export class OrdersService {
             dto.customerPhone,
             table.rows[0].table_number,
             total,
+            fingerprint,
           ],
         );
 
@@ -216,18 +227,19 @@ export class OrdersService {
         });
       });
     } catch (error) {
-      const dbError = error as { code?: string; constraint?: string };
+      const dbError = error as { code?: string; constraint?: string } | null;
       if (
-        dbError.code === '23505' &&
+        dbError?.code === '23505' &&
         dbError.constraint === 'orders_branch_idempotency_unique'
       ) {
         const existing = await this.db.query<OrderRow>(
-          `select o.*, p.provider_payment_reference from orders o
+          `select o.*, p.provider_payment_reference, o.public_access_expires_at > now() public_access_valid from orders o
            left join payments p on p.order_id=o.id
            where o.branch_id=$1 and o.idempotency_key=$2`,
           [dto.branchId, idempotencyKey],
         );
-        if (existing.rowCount) return this.toView(existing.rows[0]);
+        if (existing.rowCount)
+          return this.replay(existing.rows[0], dto.tableSessionId, fingerprint);
       }
       throw error;
     }
@@ -250,6 +262,7 @@ export class OrdersService {
          extension_used = true, updated_at = now()
        where public_reference = $1 and status = 'pending_payment' and not extension_used
          and reservation_expires_at > now()
+         and public_access_expires_at > now()
        returning *`,
       [reference],
     );
@@ -270,6 +283,23 @@ export class OrdersService {
        values ('order',$1,$2,$3,$4)`,
       [id, type, key, JSON.stringify(payload)],
     );
+  }
+
+  private replay(
+    row: OrderRow,
+    sessionId: string,
+    fingerprint: string,
+  ): OrderView {
+    if (
+      row.table_session_id !== sessionId.toLowerCase() ||
+      row.request_fingerprint !== fingerprint ||
+      !row.public_access_valid
+    ) {
+      throw new ConflictException(
+        'Idempotency key cannot be reused for this request',
+      );
+    }
+    return this.toView(row);
   }
 
   private toView(row: OrderRow): OrderView {

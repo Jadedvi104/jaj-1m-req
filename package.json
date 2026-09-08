@@ -5,9 +5,13 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "overrides": {
+    "fastify": "5.12.1",
+    "qs": "6.16.0"
+  },
   "scripts": {
     "build": "nest build",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql -f database/migrations/002_order_request_fingerprint.sql",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -18,7 +22,14 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\" --no-fix",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test:integration": "jest --config ./test/jest-integration.json --runInBand",
+    "test:all": "jest --config ./test/jest-all.json --runInBand",
+    "test:coverage": "npm run test:all -- --coverage",
+    "check": "npm run lint:check && npm run typecheck && npm run test:coverage && npm run build",
+    "test:load": "node test/load/smoke.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
