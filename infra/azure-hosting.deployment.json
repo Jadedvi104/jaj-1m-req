@@ -1,0 +1,23 @@
+{
+  "environment": "development",
+  "location": "southeastasia",
+  "resourceGroup": "rg-jaj-dev-sea",
+  "identityResourceGroup": "rg-jaj-cicd-sea",
+  "url": "https://jaj-api-dev-sea.blackglacier-66bd2b7f.southeastasia.azurecontainerapps.io",
+  "outboundIp": "138.91.34.247",
+  "registry": "jajacrdevsea98a11462",
+  "keyVault": "jaj-kv-dev-sea-98a11462",
+  "replicas": 1,
+  "cpu": 0.25,
+  "memory": "0.5Gi",
+  "githubEnvironment": "testing",
+  "githubVariables": {
+    "AZURE_CLIENT_ID": "41c2e9d2-a05d-485d-9014-f4b28e2d3af9",
+    "AZURE_TENANT_ID": "9ab9e1f3-824b-450f-86b6-3ff3326147bc",
+    "AZURE_SUBSCRIPTION_ID": "98a11462-0668-4f32-9f32-47ff6f92ca35",
+    "AZURE_RESOURCE_GROUP": "rg-jaj-dev-sea",
+    "AZURE_ACR_NAME": "jajacrdevsea98a11462",
+    "AZURE_CONTAINER_APP": "jaj-api-dev-sea",
+    "AZURE_CONTAINER_NAME": "api"
+  }
+}

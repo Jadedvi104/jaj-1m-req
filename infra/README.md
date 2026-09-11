@@ -71,11 +71,47 @@ it does not switch to these cloud settings automatically. Stop any existing
 local app process before starting a new one.
 
 When your public IP changes, update both the PostgreSQL `developer-current-ip`
-firewall rule and the Event Hubs network rule. A future hosted app will need
-its own network access and credentials.
+firewall rule and the Event Hubs network rule. The hosted development app now has its own NAT egress firewall rule and
+Key Vault references, described below.
 
 Microsoft's retail API returned USD 0.03 per hour for the Standard throughput-unit
 capacity meter in Singapore (USD 21.90 for 730 hours), plus usage and any other
 applicable charges. This is a capacity estimate, not a guaranteed total bill.
 Capture is not enabled. Pricing checked on 2026-09-08:
 https://azure.microsoft.com/en-us/pricing/details/event-hubs/
+
+## Development API hosting and CI/CD
+
+The API is hosted in Azure Container Apps in Singapore. See `CI_CD.md` at the
+repository root for the pipeline behavior and `azure-hosting.deployment.json`
+for resource identifiers and its HTTPS URL. The `testing` GitHub environment
+deploys this development app; no production app has been created.
+
+`hosting.bicep` provisions the Consumption environment, Basic ACR, application
+managed identity, Key Vault, 30-day Log Analytics workspace (1 GiB daily cap),
+and a delegated subnet with a NAT gateway and static public IP. The vault uses
+RBAC and purge protection. Its three secret inputs are secure parameters.
+`hosting-app.bicep` provisions one replica (0.25 vCPU / 0.5 GiB), verified TLS,
+health probes, Key Vault references, and deployment roles. `github-identity.bicep`
+creates the separate OIDC identity in `rg-jaj-cicd-sea`.
+
+These resources incur ongoing charges, including the NAT gateway and public IP
+even when application traffic is idle. One replica stays running because the
+application has background outbox and reservation timers. This is a development
+configuration, not the million-request production capacity target.
+
+The app egress IP is allowlisted in PostgreSQL as `hosted-app-egress` and added
+to Event Hubs alongside the developer IP. Reapplying `azure-eventhubs.json` resets
+its IP list to the developer address: re-add the hosted IP from the hosting
+metadata before using the hosted app again. Keep the NAT IP allocated; update
+both firewall rules if it changes. Neither service was opened to all Azure IPs.
+
+To recreate or update infrastructure, compile the three Bicep files, run an Azure
+resource-group deployment what-if, then deploy in Incremental mode. Deploy the
+identity and foundation before the app. Supply `databaseUrl`, `kafkaPassword`,
+and `webhookToken` to the foundation via an owner-only ignored parameter file.
+Use the existing Key Vault values when updating; do not generate new values
+unless intentionally rotating credentials. Supply the tested ACR digest as
+`image` and the GitHub identity principal ID as `pipelinePrincipalId` to the app.
+Do not commit parameter files containing credentials. Review the preview before
+each infrastructure update. Routine CD only updates the container image.

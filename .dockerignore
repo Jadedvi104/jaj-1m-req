@@ -1,6 +1,12 @@
 node_modules
 dist
 .git
-.env
+.env*
+!.env.example
+.tmp
+.temp
+.codex
+.agents
+*.log
 coverage
 graphify-out
