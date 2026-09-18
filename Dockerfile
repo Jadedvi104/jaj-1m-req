@@ -9,7 +9,13 @@ RUN npm run build && npm prune --omit=dev
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+# The service only executes Node.js at runtime. Removing npm/npx shrinks the
+# attack surface and prevents npm's bundled packages from shipping in production.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    && addgroup -S app \
+    && adduser -S app -G app
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist ./dist
 COPY --chown=app:app package.json ./
