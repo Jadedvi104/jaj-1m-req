@@ -1,7 +1,15 @@
 targetScope = 'resourceGroup'
 param location string = 'southeastasia'
 param identityName string = 'jaj-github-testing'
-param repository string = 'Jadedvi104/jaj-1m-req'
+@description('GitHub repository owner login. Preserve the exact case emitted in OIDC claims.')
+param repositoryOwner string = 'Jadedvi104'
+@description('Immutable GitHub repository owner numeric ID.')
+param repositoryOwnerId string = '29722893'
+param repositoryName string = 'jaj-1m-req'
+@description('Immutable GitHub repository numeric ID.')
+param repositoryId string = '1348208947'
+
+var immutableRepository = '${repositoryOwner}@${repositoryOwnerId}/${repositoryName}@${repositoryId}'
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: identityName
   location: location
@@ -12,9 +20,10 @@ resource federation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedI
   name: 'github-testing'
   properties: {
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${repository}:environment:testing'
+    subject: 'repo:${immutableRepository}:environment:testing'
     audiences: ['api://AzureADTokenExchange']
   }
 }
 output clientId string = identity.properties.clientId
 output principalId string = identity.properties.principalId
+output subject string = federation.properties.subject

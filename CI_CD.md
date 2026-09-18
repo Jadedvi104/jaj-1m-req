@@ -23,12 +23,14 @@ Configure branch rules to require the `Test and build` check before merging.
 
 ## What CI verifies
 
-`npm ci`, lint, TypeScript checks, unit/API tests with coverage thresholds,
+`npm ci`, a high-severity production dependency audit, lint, TypeScript checks,
+unit/API tests with coverage thresholds,
 production compilation, and all PostgreSQL integration tests against a temporary
 PostgreSQL 17 service. No Azure credentials are required.
 
 CI then builds the Linux AMD64 Docker image and starts it against another
-isolated PostgreSQL database with the migrations applied. It checks liveness,
+isolated PostgreSQL database with the migrations applied. The pipeline rejects
+fixable critical vulnerabilities found in the built image, then checks liveness,
 database readiness, and that the demo users/products routes return 404 in
 production mode. These container checks disable Kafka; they do not test broker
 publication. Both temporary containers and their network are removed on exit.
@@ -37,6 +39,8 @@ Coverage is retained for 14 days. On testing/main, the exact verified Docker
 image is retained for three days and passed to CD in the same workflow run.
 If a delayed deployment outlives the artifact, rerun the full pipeline.
 Actions are pinned to commits. Keep these pins updated deliberately.
+Dependabot checks npm, GitHub Actions, and the Docker base image weekly and opens
+updates against `dev`; pinned Action updates still require CI and review.
 
 ## One-time Azure prerequisites
 
@@ -82,8 +86,15 @@ for testing and production, with federated credentials:
 
 - Issuer: `https://token.actions.githubusercontent.com`
 - Audience: `api://AzureADTokenExchange`
-- Testing subject: `repo:Jadedvi104/jaj-1m-req:environment:testing`
-- Production subject: `repo:Jadedvi104/jaj-1m-req:environment:production`
+- Testing subject: `repo:Jadedvi104@29722893/jaj-1m-req@1348208947:environment:testing`
+- Production subject: `repo:Jadedvi104@29722893/jaj-1m-req@1348208947:environment:production`
+
+This repository uses GitHub's immutable default subject format, which includes
+the owner and repository numeric IDs. Azure matches issuer, audience, and subject
+case-sensitively; the older name-only subject does not authenticate this repository.
+Verify the active GitHub setting with
+`gh api repos/Jadedvi104/jaj-1m-req/actions/oidc/customization/sub` before creating
+another environment identity.
 
 Grant each deployment identity `AcrPush` on its registry and
 `Container Apps Contributor` on only its target app. Provisioning and assigning
@@ -118,9 +129,12 @@ Repository admin access is needed for environment configuration and branch
 rules. The default local GitHub CLI account `jaj-ai` has READ access, but the
 repository Git credential has ADMIN access and was used to configure testing.
 No credentials are committed. `scripts/ci/setup-github.sh` can repeat the setup
-with an admin GitHub login. It preserves existing review settings and does not
-change production. The development environment deploys automatically; no required
-reviewer was added. Configure production approval separately when provisioning it.
+with an admin GitHub login and an Azure login allowed to update the testing
+deployment identity. It computes the immutable GitHub subject from the repository
+API, updates only the `github-testing` federated credential, preserves existing
+environment review settings, and does not change production. The development
+environment deploys automatically; no required reviewer was added. Configure
+production approval separately when provisioning it.
 
 ## Database migrations
 
@@ -138,7 +152,8 @@ container smoke test apply all migrations to fresh disposable databases only.
 
 ## Deployment verification and rollback
 
-CD downloads the image from the current successful CI run, signs in using OIDC,
+CD signs in using OIDC and validates the target before downloading the image from
+the current successful CI run,
 pushes a unique commit/run tag to ACR, and updates only the configured container
 image using its immutable digest. Runtime secrets and configuration stay in
 Azure. It waits for that exact new revision to become ready, then checks both

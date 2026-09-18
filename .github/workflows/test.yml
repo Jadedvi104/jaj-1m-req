@@ -33,22 +33,24 @@ jobs:
           --health-timeout 3s
           --health-retries 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npm run test:integration
         env:
           TEST_DATABASE_URL: postgresql://qa:qa_test_only@localhost:5432/restaurant_test
           TEST_DATABASE_SSL: 'false'
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
       - name: Build deployment image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
           context: .
           platforms: linux/amd64
@@ -56,6 +58,14 @@ jobs:
           tags: jaj-api:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Scan deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: jaj-api:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
       - name: Smoke test deployment image
         run: bash scripts/ci/container-smoke.sh
       - name: Export verified image
@@ -63,7 +73,7 @@ jobs:
         run: docker save jaj-api:ci -o "$RUNNER_TEMP/image.tar"
       - name: Save verified image for deployment
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/main')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deployment-image-${{ github.sha }}
           overwrite: true
@@ -71,7 +81,7 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: coverage

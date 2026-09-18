@@ -25,6 +25,9 @@ build plan, current API contracts, and backend integration prerequisites.
 See [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for the current audit, compatibility
 changes, verification results, and remaining production release requirements.
 
+See [CI_CD.md](./CI_CD.md) for GitHub Actions checks, Azure deployment flow,
+OIDC configuration, migration policy, verification, and rollback guidance.
+
 ## Project architecture
 
 This application is a modular NestJS backend for multi-branch, dine-in ordering.
