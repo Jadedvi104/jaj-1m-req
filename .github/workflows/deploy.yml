@@ -1,0 +1,85 @@
+name: Deploy to Azure
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image-id:
+        description: Docker image ID produced by the successful CI job
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    # Defense in depth: never deploy PR code or arbitrary branches.
+    if: >-
+      github.event_name != 'pull_request' &&
+      ((inputs.environment == 'testing' && github.ref == 'refs/heads/testing' && vars.AZURE_DEPLOY_TESTING == 'true') ||
+       (inputs.environment == 'staging' && github.ref == 'refs/heads/staging' && vars.AZURE_DEPLOY_STAGING == 'true') ||
+       (inputs.environment == 'production' && github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_PRODUCTION == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    concurrency:
+      group: azure-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+      EXPECTED_IMAGE_ID: ${{ inputs.image-id }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+      AZURE_CONTAINER_APP: ${{ vars.AZURE_CONTAINER_APP }}
+      AZURE_CONTAINER_NAME: ${{ vars.AZURE_CONTAINER_NAME }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check deployment configuration
+        shell: bash
+        run: |
+          for key in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP AZURE_ACR_NAME AZURE_CONTAINER_APP AZURE_CONTAINER_NAME; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Missing environment variable: $key. See CI_CD.md."
+              exit 1
+            fi
+          done
+      - name: Reject superseded releases
+        run: bash scripts/ci/verify-release.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # Authenticate before downloading the large image so an OIDC mismatch fails fast.
+      - uses: azure/login@0949e32778441b2c442592b7a0e6313466dc8f29 # v3.0.2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify deployment target
+        shell: bash
+        run: |
+          az account show --query id -o tsv | grep -Fxq -- "$AZURE_SUBSCRIPTION_ID"
+          az acr show --name "$AZURE_ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --query name -o tsv >/dev/null
+          az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query name -o tsv >/dev/null
+          if [[ "$DEPLOYMENT_ENVIRONMENT" == staging ]]; then
+            target_environment=$(az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query tags.environment -o tsv)
+            [[ "$target_environment" == staging ]] || { echo '::error::Staging deployment requires an app tagged environment=staging.'; exit 1; }
+          fi
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: deployment-image-${{ github.sha }}
+          path: ${{ runner.temp }}/deployment-image
+      - name: Publish image and verify Azure revision
+        id: deploy
+        run: bash scripts/ci/deploy-azure.sh
+        env:
+          GH_TOKEN: ${{ github.token }}

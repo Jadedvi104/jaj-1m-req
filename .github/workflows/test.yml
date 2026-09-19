@@ -3,6 +3,9 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image-id: ${{ steps.image.outputs.id }}
     services:
       postgres:
         image: postgres:17-alpine
@@ -22,14 +25,88 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Validate workflows and deployment scripts
+        run: |
+          bash scripts/ci/validate.sh
+          node --test scripts/ci/*.test.mjs
       - run: npm ci
       - run: npm run check
       - run: npm run test:integration
         env:
           TEST_DATABASE_URL: postgresql://qa:qa_test_only@localhost:5432/restaurant_test
           TEST_DATABASE_SSL: 'false'
-      - uses: actions/upload-artifact@v4
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - name: Build deployment image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: jaj-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan deployment image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: jaj-api:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
+      - name: Smoke test deployment image
+        run: bash scripts/ci/container-smoke.sh
+      - name: Export verified image
+        id: image
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        run: |
+          docker save jaj-api:ci -o "$RUNNER_TEMP/image.tar"
+          echo "id=$(docker image inspect jaj-api:ci --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+      - name: Save verified image for deployment
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: deployment-image-${{ github.sha }}
+          overwrite: true
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: coverage
           path: coverage/
+          retention-days: 14
+
+  deploy-testing:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/testing' && vars.AZURE_DEPLOY_TESTING == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: testing
+      image-id: ${{ needs.test.outputs.image-id }}
+
+  deploy-staging:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/staging' && vars.AZURE_DEPLOY_STAGING == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+      image-id: ${{ needs.test.outputs.image-id }}
+
+  deploy-production:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_DEPLOY_PRODUCTION == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      image-id: ${{ needs.test.outputs.image-id }}
