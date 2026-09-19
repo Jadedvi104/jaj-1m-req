@@ -1,6 +1,6 @@
 # QA analysis and test strategy
 
-Reviewed 2026-09-05, starting with `ARCHITECTURE.md`, followed by every source module, the migration, bootstrap, dependency configuration, existing tests, Dockerfile and Compose stack.
+Reviewed 2026-09-20, starting with `ARCHITECTURE.md`, followed by every source module, the migrations, bootstrap, dependency configuration, existing tests, Dockerfile and Compose stack.
 
 ## Architecture as implemented
 
@@ -12,9 +12,9 @@ The restaurant flow is table presence validation → session → serializable or
 
 ### Local verification results
 
-- 140 unit/DTO/HTTP cases passed across 13 suites.
-- 19 real PostgreSQL 17 integration cases passed, using an isolated local cluster and generated schemas.
-- Combined unit/HTTP coverage: 99.18% statements, 84.23% branches, 98.91% functions and 99.27% lines.
+- 256 unit/DTO/HTTP cases passed across 17 suites.
+- 25 real PostgreSQL 17 integration cases passed across two suites, using isolated generated schemas.
+- Combined unit/HTTP coverage: 99.18% statements, 87.22% branches, 97.56% functions and 99.62% lines.
 - Nonmutating ESLint, full TypeScript checks and the production build passed.
 - A clean `npm ci` succeeded with the repaired lockfile.
 - The smoke runner was verified against a locally launched production build: health requests passed, and a deliberately nonexistent route correctly failed its error-rate threshold. This was a one-second harness check, not a benchmark or capacity result.
@@ -26,7 +26,7 @@ Use Node.js 22+ and `npm ci`.
 | `npm test -- --runInBand` | Unit and DTO tests; external services mocked |
 | `npm run test:e2e -- --runInBand` | Real Fastify HTTP routes, controllers and domain services; database mocked and background workers disabled |
 | `npm run test:coverage` | Combined unit + HTTP coverage, with enforced thresholds |
-| `npm run test:integration` | Real PostgreSQL 17 migration, constraints, transactions and competing requests |
+| `npm run test:integration` | Real PostgreSQL 17 migrations, constraints, transactions, competing requests, and the assembled HTTP order/payment journey |
 | `npm run test:load` | Configurable bounded HTTP GET smoke load against an explicitly supplied origin |
 | `npm run check` | Nonmutating lint, full TypeScript check including tests, combined tests/coverage, production build |
 
@@ -34,7 +34,7 @@ Use Node.js 22+ and `npm ci`.
 
 ### PostgreSQL integration setup
 
-Supply a **dedicated disposable database**, never a production database. The suite deliberately requires `TEST_DATABASE_URL` and does not fall back to `DATABASE_URL`. It creates a randomized schema, applies the real migration, resets its fixtures between cases, closes application pools and drops the schema afterwards. The database role needs schema and extension creation privileges. Do not run concurrent suites against the same database if `pgcrypto` has not already been installed. TLS can be selected with `TEST_DATABASE_SSL=true`.
+Supply a **dedicated disposable database**, never a production database. The suite deliberately requires `TEST_DATABASE_URL` and does not fall back to `DATABASE_URL`. It creates a randomized schema, applies the real migrations, resets its fixtures between cases, closes application pools and drops the schema afterwards. The database role needs schema and extension creation privileges. Do not run concurrent suites against the same database if `pgcrypto` has not already been installed. TLS can be selected with `TEST_DATABASE_SSL=true`.
 
 PowerShell example:
 
@@ -44,7 +44,7 @@ $env:TEST_DATABASE_SSL = 'false'
 npm run test:integration
 ```
 
-The GitHub Actions workflow provisions PostgreSQL 17 and runs both `check` and integration tests. No application credentials are required. Workflow execution on GitHub is separate from local verification.
+The GitHub Actions workflow provisions PostgreSQL 17 and runs both `check` and integration tests. The integration stage includes `test/api-journey.integration-spec.ts`, so the real Fastify bootstrap, controllers, services, migrations, and database are verified together before an image can deploy. No application credentials are required. Workflow execution on GitHub is separate from local verification.
 
 ### Smoke load
 
@@ -68,6 +68,8 @@ Each test has an executable descriptive name. Parameterized cases exercise separ
 | --- | --- | --- | --- |
 | HTTP-01 | Root prefix, unknown route | `/api` responds; unprefixed root 404 | `test/app.e2e-spec.ts` |
 | HTTP-02 | Liveness/readiness, database outage | Liveness independent; readiness 503 without secrets | HTTP suite |
+| JOURNEY-01 | Health → table session → order → public lookup → extension → authenticated payment → paid lookup | Real HTTP responses, inventory conversion, and durable reserved/paid events remain consistent | `test/api-journey.integration-spec.ts` |
+| JOURNEY-02 | Identical order/payment retries, changed order reuse, mismatched payment, conflicting payment retry | Retries are side-effect safe; changed reuse conflicts; mismatch remains review-required without selling stock | `test/api-journey.integration-spec.ts` |
 | CRUD-01 | Create/list/read/PATCH/delete users and products | Correct responses and preserved omitted fields | HTTP suite, feature unit tests |
 | CRUD-02 | Unknown/malformed IDs and properties | 404/400; input cannot inject fields | HTTP suite |
 | CRUD-03 | Returned object mutation, deletion isolation, ID reuse | No mutation through returned copies; IDs increase | `src/common/crud.service.spec.ts` |

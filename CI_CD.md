@@ -24,9 +24,11 @@ Configure branch rules to require the `Test and build` check before merging.
 ## What CI verifies
 
 `npm ci`, a high-severity production dependency audit, lint, TypeScript checks,
-unit/API tests with coverage thresholds,
-production compilation, and all PostgreSQL integration tests against a temporary
-PostgreSQL 17 service. No Azure credentials are required.
+unit/API tests with coverage thresholds, production compilation, and all PostgreSQL
+integration tests against a temporary PostgreSQL 17 service. The integration gate
+includes the assembled Fastify customer journey from table-session creation through
+order lookup/extension and an authenticated payment callback, with database and
+outbox assertions. No Azure credentials are required.
 
 CI then builds the Linux AMD64 Docker image and starts it against another
 isolated PostgreSQL database with the migrations applied. The pipeline rejects
