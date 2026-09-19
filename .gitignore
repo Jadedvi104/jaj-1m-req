@@ -54,3 +54,8 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Local staging credentials and secure infrastructure parameter files
+.env.staging
+.env.staging.local
+infra/*.local.json

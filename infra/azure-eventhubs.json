@@ -18,6 +18,22 @@
       "metadata": {
         "description": "Current authorized developer public IPv4 address."
       }
+    },
+    "environmentTag": {
+      "type": "string",
+      "defaultValue": "development",
+      "allowedValues": [
+        "development",
+        "staging",
+        "production"
+      ]
+    },
+    "additionalAllowedIps": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Complete list of additional approved IPv4 addresses or CIDRs, including the hosted application NAT IP. Preserve these on every deployment."
+      }
     }
   },
   "resources": [
@@ -33,7 +49,7 @@
       },
       "tags": {
         "project": "jaj-1m-req",
-        "environment": "development"
+        "environment": "[parameters('environmentTag')]"
       },
       "properties": {
         "kafkaEnabled": true,
@@ -54,13 +70,17 @@
         "defaultAction": "Deny",
         "publicNetworkAccess": "Enabled",
         "trustedServiceAccessEnabled": false,
-        "ipRules": [
+        "virtualNetworkRules": [],
+        "copy": [
           {
-            "ipMask": "[concat(parameters('developerIp'), '/32')]",
-            "action": "Allow"
+            "name": "ipRules",
+            "count": "[length(union(createArray(concat(parameters('developerIp'), '/32')), parameters('additionalAllowedIps')))]",
+            "input": {
+              "ipMask": "[union(createArray(concat(parameters('developerIp'), '/32')), parameters('additionalAllowedIps'))[copyIndex('ipRules')]]",
+              "action": "Allow"
+            }
           }
-        ],
-        "virtualNetworkRules": []
+        ]
       }
     },
     {

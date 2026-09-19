@@ -1,5 +1,7 @@
 targetScope = 'resourceGroup'
 param location string = 'southeastasia'
+@allowed(['development', 'staging', 'production'])
+param environmentTag string = 'development'
 param appName string = 'jaj-api-dev-sea'
 param prefix string = 'jaj-dev-sea'
 param registryName string = 'jajacrdevsea98a11462'
@@ -16,7 +18,7 @@ resource vault 'Microsoft.KeyVault/vaults@2025-05-01' existing = { name: vaultNa
 resource app 'Microsoft.App/containerApps@2026-01-01' = {
   name: appName
   location: location
-  tags: { project: 'jaj-1m-req', environment: 'development' }
+  tags: { project: 'jaj-1m-req', environment: environmentTag }
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${identity.id}': {} }

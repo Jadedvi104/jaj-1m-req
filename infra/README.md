@@ -101,9 +101,9 @@ application has background outbox and reservation timers. This is a development
 configuration, not the million-request production capacity target.
 
 The app egress IP is allowlisted in PostgreSQL as `hosted-app-egress` and added
-to Event Hubs alongside the developer IP. Reapplying `azure-eventhubs.json` resets
-its IP list to the developer address: re-add the hosted IP from the hosting
-metadata before using the hosted app again. Keep the NAT IP allocated; update
+to Event Hubs alongside the developer IP. When applying `azure-eventhubs.json`, include the hosted IP from the hosting
+metadata in `additionalAllowedIps`, along with every other approved hosted IP.
+Omitting the list resets access to the developer address. Keep the NAT IP allocated; update
 both firewall rules if it changes. Neither service was opened to all Azure IPs.
 
 To recreate or update infrastructure, compile the three Bicep files, run an Azure
@@ -115,3 +115,10 @@ unless intentionally rotating credentials. Supply the tested ACR digest as
 `image` and the GitHub identity principal ID as `pipelinePrincipalId` to the app.
 Do not commit parameter files containing credentials. Review the preview before
 each infrastructure update. Routine CD only updates the container image.
+
+## Separate staging environment
+
+See [STAGING.md](../STAGING.md) for the staging provisioning sequence and GitHub
+activation. `staging.bicep` composes the shared hosting templates with staging
+tags and required explicit resource names. Existing template defaults still
+refer to development; always pass staging names and environment parameters.

@@ -8,15 +8,17 @@ CD updates existing apps; infrastructure and runtime secrets are managed separat
 ## Branch flow
 
 - Pull requests run checks without Azure credentials or deployments.
-- Pushes to `dev`, `testing`, `main`, and `codex/**` run CI.
+- Pushes to `dev`, `testing`, `staging`, `main`, and `codex/**` run CI.
 - `testing` deploys to the GitHub `testing` environment when the repository
   variable `AZURE_DEPLOY_TESTING` is exactly `true`.
+- `staging` deploys to the separate GitHub `staging` environment only when
+  `AZURE_DEPLOY_STAGING` is exactly `true`; see [STAGING.md](STAGING.md) for setup.
 - `main` deploys to the GitHub `production` environment when the repository
   variable `AZURE_DEPLOY_PRODUCTION` is exactly `true`.
 - Actions → Quality checks → Run workflow reruns the pipeline for a selected
   branch. The same branch restrictions and enablement flags still apply.
 
-Promote changes by merging `dev` → `testing` → `main`. A main deployment tests
+Promote changes by merging `dev` → `testing` → `staging` → `main`. A main deployment tests
 and builds its own merge commit; it does not assume that testing and main have
 identical contents. Each deployment uses its own CI-verified image artifact.
 Configure branch rules to require the `Test and build` check before merging.
@@ -37,7 +39,7 @@ database readiness, and that the demo users/products routes return 404 in
 production mode. These container checks disable Kafka; they do not test broker
 publication. Both temporary containers and their network are removed on exit.
 
-Coverage is retained for 14 days. On testing/main, the exact verified Docker
+Coverage is retained for 14 days. On testing/staging/main, the exact verified Docker
 image is retained for three days and passed to CD in the same workflow run.
 If a delayed deployment outlives the artifact, rerun the full pipeline.
 Actions are pinned to commits. Keep these pins updated deliberately.

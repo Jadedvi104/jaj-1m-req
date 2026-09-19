@@ -18,15 +18,22 @@ This is a system-level target, not a NestJS setting. Before sizing infrastructur
 
 ## Current State
 
-The current CRUD services store entities in process-local arrays. This is appropriate for a prototype, but not for production because:
+The ordering path already uses NestJS with Fastify, validated requests,
+PostgreSQL transactions and bounded pools, inventory reservations, idempotency,
+payments, an outbox publisher, and reservation expiration. Database TLS verifies
+certificates. Shared application setup installs validation, the API prefix, and
+shutdown hooks; health endpoints cover liveness and database readiness.
 
-- Data disappears when the process restarts.
-- Each API replica would have different data.
-- Horizontal scaling would produce inconsistent responses.
-- Array searches become slower as data grows.
-- There is no database, cache, connection management, messaging, or overload protection.
+Users/products remain in-memory examples gated behind development mode and an
+explicit demo flag. They are disabled in hosted environments. Redis is available
+lazily but is not currently a required ordering dependency. Background workers
+still execute inside the API process; independent worker scaling is future work.
 
-The first architectural requirement is therefore to make every API replica stateless and move durable state into PostgreSQL.
+Azure development hosting is represented by the checked-in deployment metadata.
+The staging branch now has a separate, opt-in deployment path and infrastructure
+configuration; see [STAGING.md](STAGING.md) for provisioning and activation.
+Staging infrastructure is not established merely by adding these files. Neither
+the small hosted profile nor passing CI demonstrates the 50,000 RPS target.
 
 ## Target Architecture
 
@@ -63,7 +70,7 @@ Distributed cache                     Consumer groups / workers
 
 ## API Layer
 
-- Keep NestJS, but use the Fastify adapter after compatibility testing.
+- Keep the existing NestJS Fastify adapter and shared production/test setup.
 - Run one Node.js process per container and scale with multiple replicas.
 - Keep sessions, entities, quotas, and idempotency records out of process memory.
 - Add request validation and response serialization.
@@ -189,6 +196,10 @@ Record at minimum:
 Propagate a correlation or trace ID from the HTTP request through database operations, outbox records, Kafka messages, and consumers.
 
 ## Delivery Plan
+
+These are capability milestones, not a list of entirely missing features. Several
+foundations below already exist; use Current State and CI results to track remaining
+work. Staging provisioning and release acceptance are described in STAGING.md.
 
 ### Phase 1: define and baseline
 

@@ -2,6 +2,8 @@ targetScope = 'resourceGroup'
 
 @description('Small development hosting; no production capacity assumptions.')
 param location string = 'southeastasia'
+@allowed(['development', 'staging', 'production'])
+param environmentTag string = 'development'
 param prefix string = 'jaj-dev-sea'
 param registryName string = 'jajacrdevsea98a11462'
 param vaultName string = 'jaj-kv-dev-sea-98a11462'
@@ -12,7 +14,7 @@ param kafkaPassword string
 @secure()
 param webhookToken string
 
-var tags = { project: 'jaj-1m-req', environment: 'development' }
+var tags = { project: 'jaj-1m-req', environment: environmentTag }
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2024-11-30' = {
   name: '${prefix}-app'
   location: location
