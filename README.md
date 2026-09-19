@@ -1,3 +1,6 @@
+# Owner's written message
+Hi, this message is from Ja the owner of this project and I would like to demonstrate how I work with the agent to create a complex project from scratch.
+
 # Restaurant Ordering API
 
 NestJS foundation for a multi-branch, dine-in ordering platform using PostgreSQL, a transactional outbox, and Kafka-compatible messaging.
