@@ -22,6 +22,15 @@
       "metadata": {
         "description": "Provide from local secret storage; never commit a value."
       }
+    },
+    "environmentTag": {
+      "type": "string",
+      "defaultValue": "development",
+      "allowedValues": [
+        "development",
+        "staging",
+        "production"
+      ]
     }
   },
   "resources": [
@@ -32,7 +41,7 @@
       "location": "[parameters('location')]",
       "tags": {
         "project": "jaj-1m-req",
-        "environment": "development"
+        "environment": "[parameters('environmentTag')]"
       },
       "sku": {
         "name": "Standard_B1ms",

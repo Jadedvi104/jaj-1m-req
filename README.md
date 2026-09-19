@@ -1,3 +1,6 @@
+# Owner's written message
+Hi, this message is from Ja the owner of this project and I would like to demonstrate how I work with the agent to create a complex project from scratch.
+
 # Restaurant Ordering API
 
 NestJS foundation for a multi-branch, dine-in ordering platform using PostgreSQL, a transactional outbox, and Kafka-compatible messaging.
@@ -24,6 +27,9 @@ build plan, current API contracts, and backend integration prerequisites.
 
 See [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for the current audit, compatibility
 changes, verification results, and remaining production release requirements.
+
+See [CI_CD.md](./CI_CD.md) for GitHub Actions checks, Azure deployment flow,
+OIDC configuration, migration policy, verification, and rollback guidance.
 
 ## Project architecture
 

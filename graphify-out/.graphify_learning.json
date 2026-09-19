@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-09-18T10:34:56.530143+00:00",
+  "nodes": {
+    "architecture_high_throughput_architecture": {
+      "code_fingerprint": "b6d19cc28250d6853258aa747e80fac095447da25f9de899a9802ee0f994fbd4",
+      "label": "High-Throughput Architecture Plan",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "ARCHITECTURE.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "security_audit_security_and_refactoring_audit": {
+      "code_fingerprint": "31a98b0046ab25b2878bcedff80af660b619abde537e917e72620c66401a2549",
+      "label": "Security and Refactoring Audit",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "SECURITY_AUDIT.md",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_app_module_appmodule": {
+      "code_fingerprint": "6c5430fc32bb3bf7fe8b9a09aeaa7d464939ffa8192c5e1aeabba2b32209f726",
+      "label": "AppModule",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "src/app.module.ts",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_database_database_service_databaseservice": {
+      "code_fingerprint": "8adc347931ddfe3ce06e976bd08388cc4344d3aa5b8dbd18719498e8078a3e6b",
+      "label": "DatabaseService",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "src/database/database.service.ts",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_messaging_outbox_publisher_service_outboxpublisherservice": {
+      "code_fingerprint": "d7ab12be27d060689725877e3645ba95abb98621af607350f5c7852155ff0a0f",
+      "label": "OutboxPublisherService",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "src/messaging/outbox-publisher.service.ts",
+      "status": "tentative",
+      "uses": 1
+    },
+    "src_orders_orders_service_ordersservice": {
+      "code_fingerprint": "3d419321a60c0587f64a036ac9fbcd422bbba6433126bca1d560a5be3958043c",
+      "label": "OrdersService",
+      "last": "2026-09-18T10:00:09.327092+00:00",
+      "provenance": [
+        {
+          "date": "2026-09-18T10:00:09.327092+00:00",
+          "outcome": "useful",
+          "q": "Please write a document about architecture of this project and insert it in README.md. 1. Architectural Patterns 2. Nest.js best practice pattern 3. Design Principles 4. Networking and Security 5. Programming Language Best practice that align with the framework used."
+        }
+      ],
+      "score": 0.999442,
+      "source_file": "src/orders/orders.service.ts",
+      "status": "tentative",
+      "uses": 1
+    }
+  },
+  "version": 1
+}
