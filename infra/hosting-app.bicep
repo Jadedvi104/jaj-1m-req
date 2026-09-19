@@ -84,5 +84,16 @@ resource pushRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8311e382-0749-4cb8-b61a-304f252e45ec')
   }
 }
+// AcrPush grants image push/pull, not the control-plane registry reads used
+// by az acr show/login in the deployment workflow. Keep Reader registry-scoped.
+resource registryReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(registry.id, pipelinePrincipalId, 'Reader')
+  scope: registry
+  properties: {
+    principalId: pipelinePrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
+  }
+}
 output url string = 'https://${app.properties.configuration.ingress.fqdn}'
 output containerApp string = app.name

@@ -66,7 +66,8 @@ reapplying templates. Use only synthetic customer/payment data in staging.
 8. Deploy `infra/staging.bicep` with the same staging foundation parameters,
    `appName`, `kafkaBroker`, the verified image digest, and the staging deployment
    identity's `pipelinePrincipalId`. This creates the app and scopes deployment
-   permissions to the staging app/registry. It does not provision the database,
+   permissions to the staging app/registry (`Container Apps Contributor` on the
+   app, plus `AcrPush` and `Reader` on the registry). It does not provision the database,
    topic, identity, firewall rules, or schema. It requires steps 1–7 first.
 9. Verify the first deployment and record non-secret resource identifiers in a
    new `infra/azure-staging.deployment.json`. Do not overwrite the development

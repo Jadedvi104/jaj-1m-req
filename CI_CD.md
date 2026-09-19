@@ -100,10 +100,19 @@ Verify the active GitHub setting with
 `gh api repos/Jadedvi104/jaj-1m-req/actions/oidc/customization/sub` before creating
 another environment identity.
 
-Grant each deployment identity `AcrPush` on its registry and
+Grant each deployment identity `AcrPush` and `Reader` on its registry and
 `Container Apps Contributor` on only its target app. Provisioning and assigning
 roles remain separate administrator operations. The pipeline does not need
 subscription Owner access or a stored Azure client secret.
+
+`AcrPush` does not grant `Microsoft.ContainerRegistry/registries/read`. The
+workflow uses control-plane reads through `az acr show` and registry discovery,
+so the registry-scoped `Reader` assignment is also required. If CI reports this
+specific authorization failure, verify the environment's target and deployment
+principal, apply that registry-scoped assignment using an authorized administrator,
+allow RBAC propagation, then rerun the job for a fresh OIDC login. Do not grant
+subscription-wide Contributor to solve a registry-read failure.
+See [Microsoft's registry role reference](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-roles).
 
 In GitHub Settings → Environments, create `testing` and `production`. Restrict
 allowed deployment branches to `testing` and `main`, respectively. Set a required
