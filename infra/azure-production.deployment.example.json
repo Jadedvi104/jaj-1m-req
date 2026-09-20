@@ -1,0 +1,12 @@
+{
+  "environment": "production",
+  "subscriptionId": "REPLACE_WITH_VERIFIED_SUBSCRIPTION_ID",
+  "resourceGroup": "REPLACE_WITH_VERIFIED_RESOURCE_GROUP",
+  "containerApp": "REPLACE_WITH_VERIFIED_APP_NAME",
+  "containerName": "api",
+  "managedEnvironment": "REPLACE_WITH_VERIFIED_ENVIRONMENT_NAME",
+  "postgresServer": "REPLACE_WITH_VERIFIED_SERVER_NAME",
+  "eventHubNamespace": "REPLACE_WITH_VERIFIED_NAMESPACE_NAME",
+  "keyVault": "REPLACE_WITH_VERIFIED_VAULT_NAME",
+  "registry": "REPLACE_WITH_VERIFIED_REGISTRY_NAME"
+}

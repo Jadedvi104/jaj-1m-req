@@ -70,10 +70,17 @@ jobs:
           az account show --query id -o tsv | grep -Fxq -- "$AZURE_SUBSCRIPTION_ID"
           az acr show --name "$AZURE_ACR_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --query name -o tsv >/dev/null
           az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query name -o tsv >/dev/null
-          if [[ "$DEPLOYMENT_ENVIRONMENT" == staging ]]; then
+          if [[ "$DEPLOYMENT_ENVIRONMENT" == staging || "$DEPLOYMENT_ENVIRONMENT" == production ]]; then
             target_environment=$(az containerapp show --name "$AZURE_CONTAINER_APP" --resource-group "$AZURE_RESOURCE_GROUP" --query tags.environment -o tsv)
-            [[ "$target_environment" == staging ]] || { echo '::error::Staging deployment requires an app tagged environment=staging.'; exit 1; }
+            [[ "$target_environment" == "$DEPLOYMENT_ENVIRONMENT" ]] || { echo "::error::Deployment target must be tagged environment=$DEPLOYMENT_ENVIRONMENT."; exit 1; }
           fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: inputs.environment == 'production'
+        with:
+          node-version: 22
+      - name: Verify production infrastructure
+        if: inputs.environment == 'production'
+        run: node scripts/ci/verify-production.mjs
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           name: deployment-image-${{ github.sha }}

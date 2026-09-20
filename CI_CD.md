@@ -4,7 +4,8 @@ Maintained against the repository workflows on 2026-09-20.
 
 Audience: DevOps/platform engineers, release operators, and database owners.
 This is the repository runbook; provisioning steps for isolated staging are in
-[STAGING.md](STAGING.md). Follow the release procedure for routine deployments
+[STAGING.md](STAGING.md); production setup, local configuration and activation are
+in [PRODUCTION.md](PRODUCTION.md). Follow the release procedure for routine deployments
 and the troubleshooting playbook for failed runs.
 
 The workflows target GitHub Actions and Azure Container Apps. Development hosting
@@ -133,6 +134,13 @@ Grant each deployment identity `AcrPush` and `Reader` on its registry and
 `Container Apps Contributor` on only its target app. Provisioning and assigning
 roles remain separate administrator operations. The pipeline does not need
 subscription Owner access or a stored Azure client secret.
+
+Production additionally needs Reader on its dedicated resource group for the
+infrastructure preflight in `scripts/ci/verify-production.mjs`. This grants
+configuration reads, not Key Vault secret values. `infra/production-app.bicep`
+assigns it. The preflight requires a verified `infra/azure-production.deployment.json`
+and checks isolation, HA, backups, TLS, replica/connection limits and managed
+identity secret references before publishing a release image.
 
 `AcrPush` does not grant `Microsoft.ContainerRegistry/registries/read`. The
 workflow uses control-plane reads through `az acr show` and registry discovery,

@@ -122,3 +122,10 @@ See [STAGING.md](../STAGING.md) for the staging provisioning sequence and GitHub
 activation. `staging.bicep` composes the shared hosting templates with staging
 tags and required explicit resource names. Existing template defaults still
 refer to development; always pass staging names and environment parameters.
+# Production preparation
+
+See [PRODUCTION.md](../PRODUCTION.md) for the operator-managed production setup.
+`production.bicep` creates an isolated HA foundation; `production-app.bicep`
+deploys a CI-verified image after database and identity bootstrap. Local inputs
+live in the ignored `.env` / `.env.local` production sections. No production
+deployment has been performed by adding these templates.
